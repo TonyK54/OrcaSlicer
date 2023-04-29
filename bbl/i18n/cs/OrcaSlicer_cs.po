@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-03-16 21:34+0800\n"
+"POT-Creation-Date: 2023-04-26 22:21+0800\n"
 "PO-Revision-Date: 2023-03-31 22:48+0200\n"
 "Last-Translator: Momo <renemosner@seznam.cz>\n"
 "Language-Team: \n"
@@ -17,6 +17,36 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
 "X-Generator: Poedit 3.2.2\n"
+
+msgid "Physical Printer"
+msgstr ""
+
+msgid ""
+"HTTPS CA file is optional. It is only needed if you use HTTPS with a self-"
+"signed certificate."
+msgstr ""
+
+msgid ""
+"On this system, %s uses HTTPS certificates from the system Certificate Store "
+"or Keychain."
+msgstr ""
+
+msgid ""
+"To use a custom CA file, please import your CA file into Certificate Store / "
+"Keychain."
+msgstr ""
+
+msgid "Send to print"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Upload and Print"
+msgstr ""
+
+msgid "Use forward slashes ( / ) as a directory separator if needed."
+msgstr ""
 
 msgid "Supports Painting"
 msgstr "Malování podpěr"
@@ -714,6 +744,18 @@ msgstr "Upravit text"
 
 msgid "Load..."
 msgstr "Načíst..."
+
+msgid "Orca Cube"
+msgstr ""
+
+msgid "3DBenchy"
+msgstr ""
+
+msgid "Autodesk FDM Test"
+msgstr ""
+
+msgid "Voron Cube"
+msgstr ""
 
 msgid "Cube"
 msgstr "Kostka"
@@ -2480,8 +2522,8 @@ msgstr "Procento"
 msgid "Layer Height (mm)"
 msgstr "Výška vrstvy (mm)"
 
-msgid "Line Flushed (mm)"
-msgstr "Čistící Linka"
+msgid "Line Width (mm)"
+msgstr ""
 
 msgid "Speed (mm/s)"
 msgstr "Rychlost (mm/s)"
@@ -3800,6 +3842,9 @@ msgstr "Nastavení filamentu"
 msgid "Printer settings"
 msgstr "Nastavení tiskárny"
 
+msgid "Untitled"
+msgstr "Bez názvu"
+
 #, boost-format
 msgid " plate %1%:"
 msgstr " podložka %1%:"
@@ -3893,9 +3938,6 @@ msgstr ""
 "Existují některé neznámé filamenty namapovaná na generickou předvolbu. "
 "Aktualizujte prosím Orca Slicer nebo restartujte Orca Slicer a zkontrolujte, "
 "zda existuje aktualizace systémupředvolby."
-
-msgid "Untitled"
-msgstr "Bez názvu"
 
 #, boost-format
 msgid "Do you want to save changes to \"%1%\"?"
@@ -4523,6 +4565,9 @@ msgstr "Stejné jako globální tisková sekvence"
 msgid "Print sequence"
 msgstr "Tisková sekvence"
 
+msgid "Plate name"
+msgstr ""
+
 msgid "Same as Global Bed Type"
 msgstr "Stejné jako globální typ postele"
 
@@ -4943,8 +4988,8 @@ msgstr ""
 msgid ""
 "When recording timelapse without toolhead, it is recommended to add a "
 "\"Timelapse Wipe Tower\" \n"
-"by right-click the empty position of build plate and choose \"Add "
-"Primitive\"->\"Timelapse Wipe Tower\"."
+"by right-click the empty position of build plate and choose \"Add Primitive"
+"\"->\"Timelapse Wipe Tower\"."
 msgstr ""
 "Při nahrávání timelapse bez nástrojové hlavy se doporučuje přidat  "
 "\"Timelapse Wipe Tower\" \n"
@@ -5959,9 +6004,6 @@ msgstr "Spodní plocha"
 msgid "Bridge"
 msgstr "Most"
 
-msgid "Skirt"
-msgstr "Obrys"
-
 msgid "Gap infill"
 msgstr "Výplň mezery"
 
@@ -6484,7 +6526,6 @@ msgstr ""
 msgid "Cooling overhang threshold"
 msgstr "Práh převisu chlazení"
 
-#, c-format
 msgid ""
 "Force cooling fan to be specific speed when overhang degree of printed part "
 "exceeds this value. Expressed as percentage which indicides how much width "
@@ -6492,8 +6533,8 @@ msgid ""
 "all outer wall no matter how much overhang degree"
 msgstr ""
 "Vynutit chladicí ventilátor na určitou rychlost, když stupeň převisu "
-"tištěného dílu překročí tuto hodnotu. Vyjádřeno v procentech, které udává, "
-"jak velká šířka linky bez podpěry spodní vrstvy. 0% znamená vynucení "
+"tištěného dílu překročí tuto hodnotu. Vyjádřeno v procentech, které udává, jak "
+"velká šířka linky bez podpěry spodní vrstvy. 0% znamená vynucení "
 "chlazení pro celou vnější stěnu bez ohledu na míru převisu"
 
 msgid "Bridge direction"
@@ -6882,16 +6923,6 @@ msgstr ""
 "Poloměr vůle kolem extruderu. Používá se pro zamezení kolizi při tisku "
 "vedlejších objektů."
 
-msgid "Max Radius"
-msgstr "Max. poloměr"
-
-msgid ""
-"Max clearance radius around extruder. Used for collision avoidance in by-"
-"object printing."
-msgstr ""
-"Maximální poloměr vůle kolem extrudéru. Používá se pro zamezení kolizi při "
-"tisku vedlejších objektů."
-
 msgid "Extruder Color"
 msgstr "Barva extruderu"
 
@@ -7028,7 +7059,6 @@ msgstr ""
 msgid "Shrinkage"
 msgstr "Smrštění"
 
-#, c-format, boost-format
 msgid ""
 "Enter the shrinkage percentage that the filament will get after cooling "
 "(94% if you measure 94mm instead of 100mm). The part will be scaled in xy to "
@@ -7114,7 +7144,6 @@ msgstr "Úhel pro vzor výplně mostu, který řídí začátek nebo hlavní sm�
 msgid "Sparse infill density"
 msgstr "Hustota řídké výplně"
 
-#, c-format
 msgid "Density of internal sparse infill, 100% means solid throughout"
 msgstr "Hustota vnitřní řídké výplně, 100% znamená celistvou v celém rozsahu"
 
@@ -7214,7 +7243,6 @@ msgstr "Klipper max_accel_to_decel bude upraven automaticky"
 msgid "accel_to_decel"
 msgstr "accel_to_decel"
 
-#, c-format, boost-format
 msgid "Klipper's max_accel_to_decel will be adjusted to this % of acceleration"
 msgstr "Klipper max_accel_to_decel bude upraven na toto % zrychlení"
 
@@ -7412,6 +7440,12 @@ msgstr ""
 "určovat, příslušnost tiskových pohybů k jednotlivým objektům. To je užitečné "
 "pro Octoprint plugin CancelObject. Nastavení NENÍ kompatibilní se Single "
 "Extruder Multi Material konfigurací a s čištěním trysky do objektu / výplně."
+
+msgid "Exclude objects"
+msgstr ""
+
+msgid "Enable this option to add EXCLUDE OBJECT command in g-code"
+msgstr ""
 
 msgid "Verbose G-code"
 msgstr "Komentáře do G-kódu"
@@ -7859,9 +7893,6 @@ msgstr ""
 "mezera mezi tryskou a tiskem. Zabraňuje tomu, aby tryska zasáhla tisk při "
 "pohybu. Použití spirálové linky ke zvednutí z může zabránit stringování"
 
-msgid "Z Hop Type"
-msgstr "Typ Z hop"
-
 msgid "Z hop type"
 msgstr "Typ Z hop"
 
@@ -7914,6 +7945,9 @@ msgstr ""
 "Toto experimentální nastavení používá příkazy G10 a G11, aby si firmware "
 "poradil s retrakcí. Toto je podporováno pouze v posledních verzích firmwaru "
 "Marlin."
+
+msgid "Show auto-calibration marks"
+msgstr ""
 
 msgid "Seam position"
 msgstr "Pozice švu"
@@ -8090,11 +8124,9 @@ msgid "Slicing Mode"
 msgstr "Režim Slicování"
 
 msgid ""
-"Use \"Sudé-liché\" for 3DLabPrint airplane models. Use \"Close holes\" to "
+"Use \"Even-odd\" for 3DLabPrint airplane models. Use \"Close holes\" to "
 "close all holes in the model."
 msgstr ""
-"Použít \"Sudé-liché\" pro modely letadel 3DLabPrint. Pomocí \"Uzavírání "
-"děr\" uzavřete všechny díry v modelu."
 
 msgid "Regular"
 msgstr "Obvyklý"
@@ -8466,12 +8498,6 @@ msgstr ""
 "Při zasouvání přesuňte trysku podél poslední dráhy vytlačování, abyste "
 "vyčistili uniklý materiál na trysce. To může minimalizovat skvrny při tisku "
 "nového dílu po cestě"
-
-msgid "NormalLift"
-msgstr "Normální zdvih"
-
-msgid "SpiralLift"
-msgstr "Spirálový zdvih"
 
 msgid "Wipe Distance"
 msgstr "Vzdálenost čištění"
@@ -9313,3 +9339,35 @@ msgstr ""
 "Zlepšete pevnost\n"
 "Did jste, že ke zlepšení pevnosti modelu můžete použít více smyček na stěně "
 "a vyšší hustotu výplně?"
+
+#~ msgid "Line Flushed (mm)"
+#~ msgstr "Čistící Linka"
+
+#~ msgid "Skirt"
+#~ msgstr "Obrys"
+
+#~ msgid "Max Radius"
+#~ msgstr "Max. poloměr"
+
+#~ msgid ""
+#~ "Max clearance radius around extruder. Used for collision avoidance in by-"
+#~ "object printing."
+#~ msgstr ""
+#~ "Maximální poloměr vůle kolem extrudéru. Používá se pro zamezení kolizi "
+#~ "při tisku vedlejších objektů."
+
+#~ msgid "Z Hop Type"
+#~ msgstr "Typ Z hop"
+
+#~ msgid ""
+#~ "Use \"Sudé-liché\" for 3DLabPrint airplane models. Use \"Close holes\" to "
+#~ "close all holes in the model."
+#~ msgstr ""
+#~ "Použít \"Sudé-liché\" pro modely letadel 3DLabPrint. Pomocí \"Uzavírání "
+#~ "děr\" uzavřete všechny díry v modelu."
+
+#~ msgid "NormalLift"
+#~ msgstr "Normální zdvih"
+
+#~ msgid "SpiralLift"
+#~ msgstr "Spirálový zdvih"

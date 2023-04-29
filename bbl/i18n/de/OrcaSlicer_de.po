@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Orca Slicer\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-02 11:05+0800\n"
+"POT-Creation-Date: 2023-04-26 22:21+0800\n"
 "PO-Revision-Date: \n"
 "Last-Translator: Heiko Liebscher <hliebschergmail.com>\n"
 "Language-Team: \n"
@@ -12,6 +12,43 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n==1) ? 0 : 1;\n"
 "X-Generator: Poedit 3.2.2\n"
+
+msgid "Physical Printer"
+msgstr "Pphysischer Drucker"
+
+msgid ""
+"HTTPS CA file is optional. It is only needed if you use HTTPS with a self-"
+"signed certificate."
+msgstr ""
+"Die HTTPS-CA-Datei ist optional. Sie wird nur benötigt, wenn Sie HTTPS mit einem"
+"selbstsignierten Zertifikat verwenden."
+
+msgid ""
+"On this system, %s uses HTTPS certificates from the system Certificate Store "
+"or Keychain."
+msgstr ""
+"In diesem System werden %s HTTPS-Zertifikate aus dem Systemzertifikatspeicher"
+"oder Schlüsselbund verwendet."
+
+msgid ""
+"To use a custom CA file, please import your CA file into Certificate Store / "
+"Keychain." 
+msgstr ""
+"Um eine benutzerdefinierte CA-Datei zu verwenden, importieren Sie bitte Ihre CA-Datei in den Zertifikatspeicher / Schlüsselbund"
+
+msgid "Send to print"
+msgstr "zum Ausdrucken senden"
+
+msgid "Upload"
+msgstr "Hochladen"
+
+msgid "Upload and Print"
+msgstr "Hochladen und Drucken"
+
+msgid "Use forward slashes ( / ) as a directory separator if needed."
+msgstr ""
+"Verwenden Sie vorwärts geneigte Schrägstriche ( / ) als "
+"Verzeichnistrennzeichen, falls erforderlich."
 
 msgid "Supports Painting"
 msgstr "Stützen aufmalen"
@@ -721,6 +758,18 @@ msgstr "Text bearbeiten"
 msgid "Load..."
 msgstr "Laden..."
 
+msgid "Orca Cube"
+msgstr ""
+
+msgid "3DBenchy"
+msgstr ""
+
+msgid "Autodesk FDM Test"
+msgstr ""
+
+msgid "Voron Cube"
+msgstr ""
+
 msgid "Cube"
 msgstr "Würfel"
 
@@ -1086,7 +1135,7 @@ msgid "Type:"
 msgstr "Typ:"
 
 msgid "Choose part type"
-msgstr "Wähle Teiletyp"
+msgstr "Wähle Teile Typ"
 
 msgid "Enter new name"
 msgstr "Geben Sie den neuen Namen ein"
@@ -1125,7 +1174,7 @@ msgid "multiple cells copy is not supported"
 msgstr "Das Kopieren mehrerer Zellen wird nicht unterstützt"
 
 msgid "Outside"
-msgstr "Aussenseite"
+msgstr "Außenseite"
 
 msgid "Auto"
 msgstr "Automatisch"
@@ -1253,7 +1302,7 @@ msgid "Unload Filament"
 msgstr "Entladen"
 
 msgid "Ext Spool"
-msgstr "Exteren Spule"
+msgstr "Externe Spule"
 
 msgid "Tips"
 msgstr "Tipps"
@@ -1554,7 +1603,7 @@ msgstr ""
 
 msgid "Please check your object list before preset changing."
 msgstr ""
-"Bitte überprüfen Sie Ihre Objektliste vor der Änderung des Voreinstellungen."
+"Bitte überprüfen Sie Ihre Objektliste vor der Änderung der Voreinstellungen."
 
 msgid "Attention!"
 msgstr "Achtung!"
@@ -1743,7 +1792,7 @@ msgid ""
 "factor K input box."
 msgstr ""
 "Kalibrierung abgeschlossen. Bitte finden Sie die am besten gleichmäßige "
-"Extrusionslinie auf Ihrem Heizbett wie im unten stehenden Bild und geben Sie "
+"Extrusionslinie auf Ihrem Heizbett wie im untenstehenden Bild und geben Sie "
 "den Wert auf seiner linken Seite in das Faktor K Eingabefeld ein."
 
 msgid "Save"
@@ -1856,7 +1905,7 @@ msgid "Print with filaments mounted on the back of the chassis"
 msgstr "Drucken mit Filamenten, die an der Rückseite des Chassis montiert sind"
 
 msgid "AMS Settings"
-msgstr "AMS Einstellungen"
+msgstr "AMS-Einstellungen"
 
 msgid "Insertion update"
 msgstr "Update einfügen"
@@ -1885,7 +1934,7 @@ msgstr ""
 "ist."
 
 msgid "Power on update"
-msgstr "Update beim einschalten"
+msgstr "Update beim Einschalten"
 
 msgid ""
 "The AMS will automatically read the information of inserted filament on "
@@ -2247,7 +2296,7 @@ msgid ""
 "No  - Give up using arachne this time"
 msgstr ""
 "Möchten Sie den klassischen Modus automatisch ausschalten?\n"
-"Ja - Arachne mit deaktiviertem klassischen Modus aktivieren\n"
+"Ja - Arachne mit deaktiviertem klassischem Modus aktivieren\n"
 "Nein - Arachne in diesem Fall nicht verwenden"
 
 msgid ""
@@ -2257,7 +2306,7 @@ msgid ""
 "YES - Keep Prime Tower\n"
 "NO  - Keep Adaptive Layer Height and Independent Support Layer Height"
 msgstr ""
-"Prime Tower funktioniert nicht, wenn Adaptive Schichthöhe oder unabhängige "
+"Prime Tower funktioniert nicht, wenn adaptive Schichthöhe oder unabhängige "
 "Support-Schichthöhe aktiviert ist.\n"
 "Was möchten Sie behalten?\n"
 "YES - Prime Tower behalten\n"
@@ -2269,7 +2318,7 @@ msgid ""
 "YES - Keep Prime Tower\n"
 "NO  - Keep Adaptive Layer Height"
 msgstr ""
-"Prime Tower funktioniert nicht, wenn Adaptive Schichthöhet aktiviert ist.\n"
+"Prime Tower funktioniert nicht, wenn Adaptive Schichthöhe aktiviert ist.\n"
 "Was möchten Sie behalten?\n"
 "YES - Prime Tower behalten\n"
 "NEIN - Adaptive Schichthöhe behalten"
@@ -2312,7 +2361,7 @@ msgid "Auto bed leveling"
 msgstr "Automatische Druckbettnivellierung"
 
 msgid "Heatbed preheating"
-msgstr "Heizbett vorheitzen"
+msgstr "Heizbett vorheizen"
 
 msgid "Sweeping XY mech mode"
 msgstr "Säubern von XY mechanisch Modus"
@@ -2324,7 +2373,7 @@ msgid "M400 pause"
 msgstr "M400 Pause"
 
 msgid "Paused due to filament runout"
-msgstr "Angehalten wegen Filament-Auslauf"
+msgstr "Angehalten wegen Filament-Ende"
 
 msgid "Heating hotend"
 msgstr "Heizen des Hotend"
@@ -2625,7 +2674,7 @@ msgid "Prepare time"
 msgstr "Vorbereitungszeit"
 
 msgid "Model printing time"
-msgstr "Druckzeit des Modell"
+msgstr "Druckzeit des Modells"
 
 msgid "Switch to silent mode"
 msgstr "Zum Leisemodus wechseln"
@@ -2948,7 +2997,7 @@ msgid "Show Configuration Folder"
 msgstr "Konfigurationsordner anzeigen"
 
 msgid "Show Tip of the Day"
-msgstr "Tip des Tages anzeigen"
+msgstr "Tipp des Tages anzeigen"
 
 msgid "Check for Update"
 msgstr "Prüfen auf Update"
@@ -3197,7 +3246,7 @@ msgid "3D Models"
 msgstr "3D Modelle"
 
 msgid "&Open G-code"
-msgstr "Öffne G-C&ode"
+msgstr "&Öffne G-Code"
 
 msgid "Open a G-code file"
 msgstr "Öffne eine G-Code-Datei"
@@ -3209,7 +3258,7 @@ msgid "Reload the plater from disk"
 msgstr "Druckplatte neu von der Festplatte laden"
 
 msgid "Export &Toolpaths as OBJ"
-msgstr "Werkzeugwege als OBJ expor&tieren"
+msgstr "Werkzeugwege als OBJ exportieren"
 
 msgid "Export toolpaths as OBJ"
 msgstr "Werkzeugweg als OBJ exportieren"
@@ -3273,7 +3322,7 @@ msgid "Export result"
 msgstr "Ergebnis exportieren"
 
 msgid "Select profile to load:"
-msgstr "Wählen Sie ein Profil zum laden aus:"
+msgstr "Wählen Sie ein Profil zum Laden aus:"
 
 #, c-format, boost-format
 msgid "There is %d config imported. (Only non-system and compatible configs)"
@@ -4422,7 +4471,7 @@ msgid "Metric"
 msgstr "Metrisch"
 
 msgid "Imperial"
-msgstr "Impirisch"
+msgstr "Imperial"
 
 msgid "Units"
 msgstr "Einheiten"
@@ -4623,7 +4672,7 @@ msgid "Print sequence"
 msgstr "Druckreihenfolge"
 
 msgid "Plate name"
-msgstr ""
+msgstr "Platten-Name"
 
 msgid "Same as Global Bed Type"
 msgstr "Der selbe wie der globale Betttyp"
@@ -5040,7 +5089,7 @@ msgstr ""
 "Wir haben einen experimentellen Stil „Tree Slim“ hinzugefügt, der ein "
 "kleineres Unterstützungsvolumen, aber eine geringere Festigkeit aufweist.\n"
 "Wir empfehlen die Verwendung mit: 0 Interface-Schichten, 0 Distanz zur "
-"Oberseite, 2 Wänden."
+"Oberseite, 2 Wände."
 
 msgid ""
 "Change these settings automatically? \n"
@@ -7094,16 +7143,6 @@ msgstr ""
 "Abstandsradius um den Extruder. Wird zur Kollisionsvermeidung im "
 "nacheinander Objektdruck verwendet."
 
-msgid "Max Radius"
-msgstr "Max Radius"
-
-msgid ""
-"Max clearance radius around extruder. Used for collision avoidance in by-"
-"object printing."
-msgstr ""
-"Maximaler Abstandsradius um den Extruder. Wird zur Kollisionsvermeidung im "
-"nacheinander Objektdruck verwendet."
-
 msgid "Extruder Color"
 msgstr "Extruder Farbe"
 
@@ -7660,10 +7699,11 @@ msgstr ""
 "Option zum Wischen in das Objekt / in den Innenfüllbereich."
 
 msgid "Exclude objects"
-msgstr ""
+msgstr "Objekte ausschließen"
 
 msgid "Enable this option to add EXCLUDE OBJECT command in g-code"
 msgstr ""
+"Aktivieren Sie diese Option, um den Befehl EXCLUDE OBJECT im G-Code hinzuzufügen."
 
 msgid "Verbose G-code"
 msgstr "ausführlicher G-Code"
@@ -8184,7 +8224,7 @@ msgstr ""
 "Firmware unterstützt."
 
 msgid "Show auto-calibration marks"
-msgstr ""
+msgstr "Zeige automatische Kalibrierungsmarkierungen"
 
 msgid "Seam position"
 msgstr "Nahtposition"
@@ -9632,6 +9672,16 @@ msgstr ""
 "Wussten Sie, dass Sie mehr Wandschlaufen und eine höhere spärliche "
 "Fülldichte verwenden können, um die Festigkeit des Modells zu verbessern?"
 
+#~ msgid "Max Radius"
+#~ msgstr "Max Radius"
+
+#~ msgid ""
+#~ "Max clearance radius around extruder. Used for collision avoidance in by-"
+#~ "object printing."
+#~ msgstr ""
+#~ "Maximaler Abstandsradius um den Extruder. Wird zur Kollisionsvermeidung "
+#~ "im nacheinander Objektdruck verwendet."
+
 #~ msgid "Z Hop Type"
 #~ msgstr "Z Hop Type"
 
@@ -10141,7 +10191,7 @@ msgstr ""
 #~ msgid ""
 #~ "Heat the nozzle to target \n"
 #~ "temperature"
-#~ msgstr "Die Druckdüse auf die Zieltemperatur heitzen"
+#~ msgstr "Die Druckdüse auf die Zieltemperatur heizen"
 
 #~ msgid "Height:"
 #~ msgstr "Höhe:"

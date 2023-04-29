@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-04-02 11:05+0800\n"
+"POT-Creation-Date: 2023-04-26 22:21+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,6 +17,30 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+msgid "Physical Printer"
+msgstr ""
+
+msgid "HTTPS CA file is optional. It is only needed if you use HTTPS with a self-signed certificate."
+msgstr ""
+
+msgid "On this system, %s uses HTTPS certificates from the system Certificate Store or Keychain."
+msgstr ""
+
+msgid "To use a custom CA file, please import your CA file into Certificate Store / Keychain."
+msgstr ""
+
+msgid "Send to print"
+msgstr ""
+
+msgid "Upload"
+msgstr ""
+
+msgid "Upload and Print"
+msgstr ""
+
+msgid "Use forward slashes ( / ) as a directory separator if needed."
+msgstr ""
 
 msgid "Supports Painting"
 msgstr ""
@@ -690,6 +714,18 @@ msgid "Edit Text"
 msgstr ""
 
 msgid "Load..."
+msgstr ""
+
+msgid "Orca Cube"
+msgstr ""
+
+msgid "3DBenchy"
+msgstr ""
+
+msgid "Autodesk FDM Test"
+msgstr ""
+
+msgid "Voron Cube"
 msgstr ""
 
 msgid "Cube"
@@ -6369,14 +6405,6 @@ msgstr ""
 msgid ""
 "Clearance radius around extruder. Used for collision avoidance in by-object "
 "printing."
-msgstr ""
-
-msgid "Max Radius"
-msgstr ""
-
-msgid ""
-"Max clearance radius around extruder. Used for collision avoidance in by-"
-"object printing."
 msgstr ""
 
 msgid "Extruder Color"
