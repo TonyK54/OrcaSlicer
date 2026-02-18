@@ -19,6 +19,10 @@ namespace Slic3r {
 enum StringExceptionType {
     STRING_EXCEPT_NOT_DEFINED                   = 0,
     STRING_EXCEPT_FILAMENT_NOT_MATCH_BED_TYPE   = 1,
+    STRING_EXCEPT_FILAMENTS_DIFFERENT_TEMP      = 2,
+    STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT = 3,
+    STRING_EXCEPT_OBJECT_COLLISION_IN_LAYER_PRINT = 4,
+    STRING_EXCEPT_LAYER_HEIGHT_EXCEEDS_LIMIT = 5,
     STRING_EXCEPT_COUNT
 };
 
@@ -29,6 +33,7 @@ struct StringObjectException
     ObjectBase const *object = nullptr;
     std::string opt_key;
     StringExceptionType         type;   // warning type for tips
+    bool is_warning = false;
     std::vector<std::string>    params; // warning params for tips
 };
 
@@ -419,7 +424,7 @@ public:
     // After calling the apply() function, call set_task() to limit the task to be processed by process().
     virtual void            set_task(const TaskParams &params) {}
     // Perform the calculation. This is the only method that is to be called at a worker thread.
-    virtual void            process(bool use_cache = false) = 0;
+    virtual void            process(long long *time_cost_with_cache = nullptr, bool use_cache = false) = 0;
     virtual int             export_cached_data(const std::string& dir_path, bool with_space=false) { return 0;}
     virtual int            load_cached_data(const std::string& directory) { return 0;}
     // Clean up after process() finished, either with success, error or if canceled.
@@ -428,18 +433,18 @@ public:
 
     struct SlicingStatus {
         SlicingStatus(int percent, const std::string &text, unsigned int flags = 0, int warning_step = -1,
-            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification) :
-            percent(percent), text(text), flags(flags), warning_step(warning_step), message_type(msg_type)
+            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification, PrintStateBase::WarningLevel warning_level = PrintStateBase::WarningLevel::NON_CRITICAL) :
+            percent(percent), text(text), flags(flags), warning_step(warning_step), message_type(msg_type), warning_level(warning_level)
         {
         }
         SlicingStatus(const PrintBase &print, int warning_step, const std::string& text,
-            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification) :
-            flags(UPDATE_PRINT_STEP_WARNINGS), warning_object_id(print.id()), text(text), warning_step(warning_step), message_type(msg_type)
+            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification, PrintStateBase::WarningLevel warning_level = PrintStateBase::WarningLevel::NON_CRITICAL) :
+            flags(UPDATE_PRINT_STEP_WARNINGS), warning_object_id(print.id()), text(text), warning_step(warning_step), message_type(msg_type), warning_level(warning_level)
         {
         }
         SlicingStatus(const PrintObjectBase &print_object, int warning_step, const std::string& text,
-            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification) :
-            flags(UPDATE_PRINT_OBJECT_STEP_WARNINGS), warning_object_id(print_object.id()), text(text), warning_step(warning_step), message_type(msg_type)
+            PrintStateBase::SlicingNotificationType  msg_type = PrintStateBase::SlicingDefaultNotification, PrintStateBase::WarningLevel warning_level = PrintStateBase::WarningLevel::NON_CRITICAL) :
+            flags(UPDATE_PRINT_OBJECT_STEP_WARNINGS), warning_object_id(print_object.id()), text(text), warning_step(warning_step), message_type(msg_type), warning_level(warning_level)
         {
         }
         int             percent { -1 };
@@ -463,6 +468,7 @@ public:
         int             warning_step { -1 };
 
         PrintStateBase::SlicingNotificationType  message_type {PrintStateBase::SlicingDefaultNotification};
+        PrintStateBase::WarningLevel  warning_level {PrintStateBase::WarningLevel::NON_CRITICAL};
     };
     typedef std::function<void(const SlicingStatus&)>  status_callback_type;
     // Default status console print out in the form of percent => message.
@@ -510,6 +516,8 @@ public:
     //BBS: get/set plate id
     int get_plate_index() const { return m_plate_index; }
     void set_plate_index(int index) { m_plate_index = index; }
+    bool get_no_check_flag() const { return m_no_check; }
+    void set_no_check_flag(bool no_check) { m_no_check = no_check; }
 
     //SoftFever plate name
     std::string get_plate_name() const { return m_plate_name; }
@@ -527,7 +535,7 @@ protected:
     void 				   status_update_warnings(int step, PrintStateBase::WarningLevel warning_level,
         const std::string &message, const PrintObjectBase* print_object = nullptr, PrintStateBase::SlicingNotificationType message_id = PrintStateBase::SlicingDefaultNotification);
     //BBS: add api to update printobject's warnings
-	void                   status_update_warnings(int step, PrintStateBase::WarningLevel /* warning_level */,
+	void                   status_update_warnings(int step, PrintStateBase::WarningLevel warning_level,
 	    const std::string& message, PrintObjectBase &object, PrintStateBase::SlicingNotificationType message_id = PrintStateBase::SlicingDefaultNotification);
 
     // If the background processing stop was requested, throw CanceledException.
@@ -543,10 +551,12 @@ protected:
 
 	Model                                   m_model;
 	DynamicPrintConfig						m_full_print_config;
+    DynamicPrintConfig						m_ori_full_print_config;  //original full print config without extruder applied
     PlaceholderParser                       m_placeholder_parser;
 
     //BBS: add plate id into print base
     int m_plate_index{ 0 };
+    bool m_no_check = false;
 
     // SoftFever: current plate name
     std::string m_plate_name;
@@ -575,7 +585,16 @@ public:
     bool            is_step_done(PrintStepEnum step) const { return m_state.is_done(step, this->state_mutex()); }
 	PrintStateBase::StateWithTimeStamp step_state_with_timestamp(PrintStepEnum step) const { return m_state.state_with_timestamp(step, this->state_mutex()); }
     PrintStateBase::StateWithWarnings  step_state_with_warnings(PrintStepEnum step) const { return m_state.state_with_warnings(step, this->state_mutex()); }
-
+    // Add a slicing warning to the active Print step and send a status notification.
+    // This method could be called multiple times between this->set_started() and this->set_done().
+    void            active_step_add_warning(PrintStateBase::WarningLevel warning_level, const std::string &message,
+                            PrintStateBase::SlicingNotificationType message_id = PrintStateBase::SlicingDefaultNotification)
+    {
+        std::pair<PrintStepEnum, bool> active_step = m_state.active_step_add_warning(warning_level, message, (int)message_id, this->state_mutex());
+        if (active_step.second)
+            // Update UI.
+            this->status_update_warnings(static_cast<int>(active_step.first), warning_level, message, nullptr, message_id);
+    }
 protected:
     bool            set_started(PrintStepEnum step) { return m_state.set_started(step, this->state_mutex(), [this](){ this->throw_if_canceled(); }); }
 	PrintStateBase::TimeStamp set_done(PrintStepEnum step) {
@@ -597,16 +616,6 @@ protected:
 	bool            is_step_started_unguarded(PrintStepEnum step) const { return m_state.is_started_unguarded(step); }
 	bool            is_step_done_unguarded(PrintStepEnum step) const { return m_state.is_done_unguarded(step); }
 
-    // Add a slicing warning to the active Print step and send a status notification.
-    // This method could be called multiple times between this->set_started() and this->set_done().
-    void            active_step_add_warning(PrintStateBase::WarningLevel warning_level, const std::string &message,
-                            PrintStateBase::SlicingNotificationType message_id = PrintStateBase::SlicingDefaultNotification)
-    {
-        std::pair<PrintStepEnum, bool> active_step = m_state.active_step_add_warning(warning_level, message, (int)message_id, this->state_mutex());
-        if (active_step.second)
-            // Update UI.
-            this->status_update_warnings(static_cast<int>(active_step.first), warning_level, message, nullptr, message_id);
-    }
 
 private:
     PrintState<PrintStepEnum, COUNT> m_state;

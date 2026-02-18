@@ -1,7 +1,10 @@
 #ifndef slic3r_GUI_SpinInput_hpp_
 #define slic3r_GUI_SpinInput_hpp_
 
+#include <wx/dcclient.h>
+#include <wx/timer.h>
 #include <wx/textctrl.h>
+#include <wx/valtext.h>
 #include "StaticBox.hpp"
 
 class Button;
@@ -20,6 +23,7 @@ class SpinInput : public wxNavigationEnabled<StaticBox>
     int min;
     int max;
     int delta;
+    int step;
 
     static const int SpinInputWidth = 200;
     static const int SpinInputHeight = 50;
@@ -33,7 +37,7 @@ public:
               const wxPoint &pos   = wxDefaultPosition,
               const wxSize & size  = wxDefaultSize,
               long           style = 0,
-              int min = 0, int max = 100, int initial = 0);
+              int min = 0, int max = 100, int initial = 0, const int& step = 1);
 
     void Create(wxWindow *     parent,
               wxString       text,
@@ -43,7 +47,8 @@ public:
               long           style   = 0,
               int            min     = 0,
               int            max     = 100,
-              int            initial = 0);
+              int            initial = 0,
+              int            step    = 1);
 
     void SetCornerRadius(double radius);
 
@@ -66,6 +71,10 @@ public:
     void SetValue (int value);
 
     int GetValue () const;
+
+    void SetStep(int value) { step = value; };
+
+    int  GetStep() { return step; };
 
     void SetRange(int min, int max);
 

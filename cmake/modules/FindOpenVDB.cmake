@@ -123,7 +123,7 @@ if (OPENVDB_FIND_MODULE_PATH)
 endif ()
 # ###########################################################################
 
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.13)
 # Monitoring <PackageName>_ROOT variables
 if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
@@ -238,7 +238,8 @@ endif()
 set(OpenVDB_LIB_COMPONENTS "")
 set(OpenVDB_DEBUG_SUFFIX "d" CACHE STRING "Suffix for the debug libraries")
 
-get_property(_is_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+# get_property(_is_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+set(_is_multi FALSE)
 
 foreach(COMPONENT ${OpenVDB_FIND_COMPONENTS})
   set(LIB_NAME ${COMPONENT})

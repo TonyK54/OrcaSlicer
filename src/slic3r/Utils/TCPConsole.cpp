@@ -4,15 +4,18 @@
 #include <boost/asio/read_until.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/write.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/format.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/algorithm/string.hpp>
 
 #include <iostream>
 #include <string>
+#include <thread>
 
 #include "TCPConsole.hpp"
+#include "SerialMessage.hpp"
+#include "SerialMessageType.hpp"
 
 using boost::asio::steady_timer;
 using boost::asio::ip::tcp;
@@ -27,21 +30,27 @@ void TCPConsole::transmit_next_command()
         return;
     }
 
-    std::string cmd = m_cmd_queue.front();
+    std::this_thread::sleep_for(m_tcp_queue_delay);
+
+    SerialMessage cmd = m_cmd_queue.front();
     m_cmd_queue.pop_front();
 
     BOOST_LOG_TRIVIAL(debug) << boost::format("TCPConsole: transmitting '%3%' to %1%:%2%")
         % m_host_name
         % m_port_name
-        % cmd;
+        % cmd.message;
 
-    m_send_buffer = cmd + m_newline;
+    m_send_buffer = cmd.message;
+
+    if (cmd.messageType == Command) {
+        m_send_buffer += m_newline;
+    }
 
     set_deadline_in(m_write_timeout);
     boost::asio::async_write(
         m_socket,
         boost::asio::buffer(m_send_buffer),
-        boost::bind(&TCPConsole::handle_write, this, _1, _2)
+        boost::bind(&TCPConsole::handle_write, this, boost::placeholders::_1, boost::placeholders::_2, cmd.messageType)
     );
 }
 
@@ -52,7 +61,7 @@ void TCPConsole::wait_next_line()
         m_socket,
         m_recv_buffer,
         m_newline,
-        boost::bind(&TCPConsole::handle_read, this, _1, _2)
+        boost::bind(&TCPConsole::handle_read, this, boost::placeholders::_1, boost::placeholders::_2)
     );
 }
 
@@ -99,7 +108,7 @@ void TCPConsole::handle_read(
 
 void TCPConsole::handle_write(
     const boost::system::error_code& ec,
-    std::size_t)
+    std::size_t, SerialMessageType messageType)
 {
     m_error_code = ec;
     if (ec) {
@@ -111,7 +120,12 @@ void TCPConsole::handle_write(
         m_io_context.stop();
     }
     else {
-        wait_next_line();
+        if(messageType == Command) {
+            wait_next_line();
+        }
+        else {
+            transmit_next_command();
+        }
     }
 }
 
@@ -157,7 +171,7 @@ bool TCPConsole::run_queue()
         auto endpoints = m_resolver.resolve(m_host_name, m_port_name);
 
         m_socket.async_connect(endpoints->endpoint(),
-            boost::bind(&TCPConsole::handle_connect, this, _1)
+            boost::bind(&TCPConsole::handle_connect, this, boost::placeholders::_1)
         );
 
         // Loop until we get any reasonable result. Negative result is also result.

@@ -3,9 +3,9 @@
 
 #include "libslic3r_version.h"
 #define SLIC3R_APP_FULL_NAME "Orca Slicer"
-#define GCODEVIEWER_APP_NAME "BambuStudio G-code Viewer"
-#define GCODEVIEWER_APP_KEY  "BambuStudioGcodeViewer"
-#define GCODEVIEWER_BUILD_ID std::string("BambuStudio G-code Viewer-") + std::string(SLIC3R_VERSION) + std::string("-RC")
+#define GCODEVIEWER_APP_NAME "OrcaSlicer G-code Viewer"
+#define GCODEVIEWER_APP_KEY  "OrcaSlicerGcodeViewer"
+#define GCODEVIEWER_BUILD_ID std::string("OrcaSlicer G-code Viewer-") + std::string(SLIC3R_VERSION) + std::string("-RC")
 
 // this needs to be included early for MSVC (listing it in Build.PL is not enough)
 #include <memory>
@@ -23,6 +23,7 @@
 #include <cassert>
 #include <cmath>
 #include <type_traits>
+#include <optional>
 
 #ifdef _WIN32
 // On MSVC, std::deque degenerates to a list of pointers, which defeats its purpose of reducing allocator load and memory fragmentation.
@@ -34,12 +35,12 @@
 #include "Technologies.hpp"
 #include "Semver.hpp"
 
-#if 1
+#if 0
 // Saves around 32% RAM after slicing step, 6.7% after G-code export (tested on PrusaSlicer 2.2.0 final).
 using coord_t = int32_t;
 #else
 //FIXME At least FillRectilinear2 and std::boost Voronoi require coord_t to be 32bit.
-typedef int64_t coord_t;
+using coord_t = int64_t;
 #endif
 
 using coordf_t = double;
@@ -54,8 +55,21 @@ static constexpr double EPSILON = 1e-4;
 // 0..4294mm with 1nm resolution
 // int32_t fits an interval of (-2147.48mm, +2147.48mm)
 // with int64_t we don't have to worry anymore about the size of the int.
-static constexpr double SCALING_FACTOR = 0.000001;
+
+// Orca todo: might be better to use 1e-5 for all, namometer resolution is not needed for 3D printing
+static constexpr double SCALING_FACTOR_INTERNAL = 0.000001;
+static constexpr double SCALING_FACTOR_INTERNAL_LARGE_PRINTER = 0.00001;
+static constexpr double LARGE_BED_THRESHOLD = 2147;
+
+// Orca: maximum number of extruders is 64. For SEMM printers, it defines maximum filament number.
+static constexpr size_t MAXIMUM_EXTRUDER_NUMBER = 64;
+
+// Orca: maximum line width is 5 times the nozzle diameter
+static constexpr float MAX_LINE_WIDTH_MULTIPLIER = 5;
+
+extern double SCALING_FACTOR;
 static constexpr double PI = 3.141592653589793238;
+#define POLY_SIDE_COUNT 24 // for brim ear circle
 // When extruding a closed loop, the loop is interrupted and shortened a bit to reduce the seam.
 // SoftFever: replaced by seam_gap now
 // static constexpr double LOOP_CLIPPING_LENGTH_OVER_NOZZLE_DIAMETER = 0.15;
@@ -64,7 +78,7 @@ static constexpr double RESOLUTION = 0.0125;
 static constexpr double SPARSE_INFILL_RESOLUTION = 0.04;
 #define                 SCALED_SPARSE_INFILL_RESOLUTION (SPARSE_INFILL_RESOLUTION / SCALING_FACTOR)
 
-static constexpr double SUPPORT_RESOLUTION = 0.05;
+static constexpr double SUPPORT_RESOLUTION = 0.0375;
 #define                 SCALED_SUPPORT_RESOLUTION (SUPPORT_RESOLUTION / SCALING_FACTOR)
 // Maximum perimeter length for the loop to apply the small perimeter speed. 
 #define                 SMALL_PERIMETER_LENGTH(LENGTH)  (((LENGTH) / SCALING_FACTOR) * 2 * PI)
@@ -73,6 +87,7 @@ static constexpr double INSET_OVERLAP_TOLERANCE = 0.4;
 //FIXME This is quite a lot.
 static constexpr double EXTERNAL_INFILL_MARGIN = 3;
 static constexpr double BRIDGE_INFILL_MARGIN = 1;
+static constexpr double WIPE_TOWER_MARGIN = 1.;
 //FIXME Better to use an inline function with an explicit return type.
 //inline coord_t scale_(coordf_t v) { return coord_t(floor(v / SCALING_FACTOR + 0.5f)); }
 #define scale_(val) ((val) / SCALING_FACTOR)
@@ -125,8 +140,8 @@ enum Axis {
 	NUM_AXES_WITH_UNKNOWN,
 };
 
-template <typename T>
-inline void append(std::vector<T>& dest, const std::vector<T>& src)
+template <typename T, typename Alloc, typename Alloc2>
+inline void append(std::vector<T, Alloc> &dest, const std::vector<T, Alloc2> &src)
 {
     if (dest.empty())
         dest = src;
@@ -134,8 +149,8 @@ inline void append(std::vector<T>& dest, const std::vector<T>& src)
         dest.insert(dest.end(), src.begin(), src.end());
 }
 
-template <typename T>
-inline void append(std::vector<T>& dest, std::vector<T>&& src)
+template <typename T, typename Alloc>
+inline void append(std::vector<T, Alloc> &dest, std::vector<T, Alloc> &&src)
 {
     if (dest.empty())
         dest = std::move(src);
@@ -145,6 +160,15 @@ inline void append(std::vector<T>& dest, std::vector<T>&& src)
     }
     src.clear();
     src.shrink_to_fit();
+}
+
+template<class T, class... Args> // Arbitrary allocator can be used
+void clear_and_shrink(std::vector<T, Args...>& vec)
+{
+    // shrink_to_fit does not garantee the release of memory nor does it clear()
+    std::vector<T, Args...> tmp;
+    vec.swap(tmp);
+    assert(vec.capacity() == 0);
 }
 
 // Append the source in reverse.
@@ -266,6 +290,12 @@ constexpr inline T sqr(T x)
     return x * x;
 }
 
+template<typename Number> constexpr 
+inline bool is_zero(Number value)
+{
+    return std::fabs(double(value)) < 1e-6;
+}
+
 template <typename T, typename Number>
 constexpr inline T lerp(const T& a, const T& b, Number t)
 {
@@ -274,9 +304,17 @@ constexpr inline T lerp(const T& a, const T& b, Number t)
 }
 
 template <typename Number>
-constexpr inline bool is_approx(Number value, Number test_value)
+constexpr inline bool is_approx(Number value, Number test_value, Number precision = EPSILON)
 {
-    return std::fabs(double(value) - double(test_value)) < double(EPSILON);
+    return std::fabs(double(value) - double(test_value)) < double(precision);
+}
+
+template<typename Number>
+constexpr inline bool is_approx(const std::optional<Number> &value,
+                                const std::optional<Number> &test_value)
+{
+    return (!value.has_value() && !test_value.has_value()) ||
+        (value.has_value() && test_value.has_value() && is_approx<Number>(*value, *test_value));
 }
 
 // A meta-predicate which is true for integers wider than or equal to coord_t
@@ -347,15 +385,41 @@ public:
     Range(It b, It e) : from(std::move(b)), to(std::move(e)) {}
 
     // Some useful container-like methods...
-    inline size_t size() const { return end() - begin(); }
-    inline bool   empty() const { return size() == 0; }
+    inline size_t size() const { return std::distance(from, to); }
+    inline bool   empty() const { return from == to; }
 };
+
+template<class Cont> auto range(Cont &&cont)
+{
+    return Range{std::begin(cont), std::end(cont)};
+}
 
 template<class T, class = FloatingOnly<T>>
 constexpr T NaN = std::numeric_limits<T>::quiet_NaN();
 
 constexpr float  NaNf = NaN<float>;
 constexpr double NaNd = NaN<double>;
+
+// Rounding up.
+// 1.5 is rounded to 2
+// 1.49 is rounded to 1
+// 0.5 is rounded to 1,
+// 0.49 is rounded to 0
+// -0.5 is rounded to 0,
+// -0.51 is rounded to -1,
+// -1.5 is rounded to -1.
+// -1.51 is rounded to -2.
+// If input is not a valid float (it is infinity NaN or if it does not fit)
+// the float to int conversion produces a max int on Intel and +-max int on ARM.
+template<typename I>
+inline IntegerOnly<I, I> fast_round_up(double a)
+{
+    // Why does Java Math.round(0.49999999999999994) return 1?
+    // https://stackoverflow.com/questions/9902968/why-does-math-round0-49999999999999994-return-1
+    return a == 0.49999999999999994 ? I(0) : I(floor(a + 0.5));
+}
+
+template<class T> using SamePair = std::pair<T, T>;
 
 } // namespace Slic3r
 

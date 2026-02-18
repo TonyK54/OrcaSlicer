@@ -1,25 +1,26 @@
 {
     "type": "filament",
     "name": "fdm_filament_tpu",
-    "from": "system",
-    "instantiation": "false",
     "inherits": "fdm_filament_common",
-    "cool_plate_temp" : [
+    "from": "system",
+    "filament_id": "GFU99",
+    "instantiation": "false",
+    "cool_plate_temp": [
         "30"
     ],
-    "eng_plate_temp" : [
+    "eng_plate_temp": [
         "30"
     ],
-    "hot_plate_temp" : [
+    "hot_plate_temp": [
         "35"
     ],
-    "cool_plate_temp_initial_layer" : [
+    "cool_plate_temp_initial_layer": [
         "30"
     ],
-    "eng_plate_temp_initial_layer" : [
+    "eng_plate_temp_initial_layer": [
         "30"
     ],
-    "hot_plate_temp_initial_layer" : [
+    "hot_plate_temp_initial_layer": [
         "35"
     ],
     "fan_cooling_layer_time": [
@@ -40,6 +41,7 @@
     "filament_retraction_length": [
         "0.4"
     ],
+    "idle_temperature": "0",
     "nozzle_temperature_initial_layer": [
         "240"
     ],

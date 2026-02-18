@@ -1,88 +1,70 @@
 #ifndef _WIPE_TOWER_DIALOG_H_
 #define _WIPE_TOWER_DIALOG_H_
 
-#include <wx/spinctrl.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
-#include <wx/checkbox.h>
-#include <wx/msgdlg.h>
+#include <wx/dialog.h>
+#include <wx/webview.h>
+#include "libslic3r/PrintConfig.hpp"
+#include "Widgets/SpinInput.hpp"
 
-class Button;
+#include "RammingChart.hpp"
 
-class WipingPanel : public wxPanel {
+
+class RammingPanel : public wxPanel {
 public:
-    // BBS
-    WipingPanel(wxWindow* parent, const std::vector<float>& matrix, const std::vector<float>& extruders, const std::vector<std::string>& extruder_colours, Button* calc_button,
-        int extra_flush_volume, float flush_multiplier);
-    std::vector<float> read_matrix_values();
-    std::vector<float> read_extruders_values();
-    void toggle_advanced(bool user_action = false);
-    void create_panels(wxWindow* parent, const int num);
-    void calc_flushing_volumes();
-
-    float get_flush_multiplier()
-    {
-        if (m_flush_multiplier_ebox == nullptr)
-            return 1.f;
-
-        return std::atof(m_flush_multiplier_ebox->GetValue().c_str());
-    }
+    RammingPanel(wxWindow* parent);
+    RammingPanel(wxWindow* parent,const std::string& data);
+    std::string get_parameters();
 
 private:
-    void fill_in_matrix();
-    bool advanced_matches_simple();
-    int calc_flushing_volume(const wxColour& from, const wxColour& to);
-    void update_warning_texts();
-        
-    std::vector<wxSpinCtrl*> m_old;
-    std::vector<wxSpinCtrl*> m_new;
-    std::vector<std::vector<wxTextCtrl*>> edit_boxes;
-    std::vector<wxColour> m_colours;
-    unsigned int m_number_of_extruders  = 0;
-    bool m_advanced                     = false;
-	wxPanel*	m_page_simple = nullptr;
-	wxPanel*	m_page_advanced = nullptr;
-    wxPanel* header_line_panel = nullptr;
-    wxBoxSizer*	m_sizer = nullptr;
-    wxBoxSizer* m_sizer_simple = nullptr;
-    wxBoxSizer* m_sizer_advanced = nullptr;
-    wxGridSizer* m_gridsizer_advanced = nullptr;
-    wxButton* m_widget_button     = nullptr;
+    Chart* m_chart = nullptr;
+    SpinInput* m_widget_volume = nullptr;
+    SpinInput* m_widget_ramming_line_width_multiplicator = nullptr;
+    SpinInput* m_widget_ramming_step_multiplicator = nullptr;
+    SpinInput* m_widget_time = nullptr;
+    int m_ramming_step_multiplicator;
+    int m_ramming_line_width_multiplicator;
+      
+    void line_parameters_changed();
+};
 
-    const int m_min_flush_volume;
-    const int m_max_flush_volume;
 
-    wxTextCtrl* m_flush_multiplier_ebox = nullptr;
-    wxStaticText* m_min_flush_label = nullptr;
-
-    std::vector<float> m_matrix;
+class RammingDialog : public wxDialog {
+public:
+    RammingDialog(wxWindow* parent,const std::string& parameters);    
+    std::string get_parameters() { return m_output_data; }
+private:
+    RammingPanel* m_panel_ramming = nullptr;
+    std::string m_output_data;
 };
 
 
 
+bool is_flush_config_modified();
+void open_flushing_dialog(wxEvtHandler *parent, const wxEvent &event);
 
-
-class WipingDialog : public wxDialog {
+class WipingDialog : public wxDialog
+{
 public:
-    WipingDialog(wxWindow* parent, const std::vector<float>& matrix, const std::vector<float>& extruders, const std::vector<std::string>& extruder_colours,
-        int extra_flush_volume, float flush_multiplier);
-    std::vector<float> get_matrix() const    { return m_output_matrix; }
-    std::vector<float> get_extruders() const { return m_output_extruders; }
+	using VolumeMatrix = std::vector<std::vector<double>>;
 
-    wxBoxSizer* create_btn_sizer(long flags);
-
-    float get_flush_multiplier()
-    {
-        if (m_panel_wiping == nullptr)
-            return 1.f;
-
-        return m_panel_wiping->get_flush_multiplier();
-    }
+	WipingDialog(wxWindow* parent, const int max_flush_volume = Slic3r::g_max_flush_volume);
+	static VolumeMatrix CalcFlushingVolumes(int extruder_id);
+	std::vector<double> GetFlattenMatrix()const;
+	std::vector<double> GetMultipliers()const;
+	bool GetSubmitFlag() const { return m_submit_flag; }
 
 private:
-    WipingPanel*  m_panel_wiping  = nullptr;
-    std::vector<float> m_output_matrix;
-    std::vector<float> m_output_extruders;
+	static int CalcFlushingVolume(const wxColour& from_, const wxColour& to_, int min_flush_volume, int nozzle_flush_dataset);
+	wxString BuildTableObjStr();
+	wxString BuildTextObjStr(bool multi_language = true);
+	void StoreFlushData(int extruder_num, const std::vector<std::vector<double>>& flush_volume_vecs, const std::vector<double>& flush_multipliers);
+
+	wxWebView* m_webview;
+	int m_max_flush_volume;
+
+	VolumeMatrix m_raw_matrixs;
+	std::vector<double> m_flush_multipliers;
+	bool m_submit_flag{ false };
 };
 
 #endif  // _WIPE_TOWER_DIALOG_H_

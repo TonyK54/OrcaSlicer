@@ -20,16 +20,21 @@
 #include "ParamsPanel.hpp"
 #include "Monitor.hpp"
 #include "Auxiliary.hpp"
+#include "Project.hpp"
+#include "CalibrationPanel.hpp"
 #include "UnsavedChangesDialog.hpp"
 #include "Widgets/SideButton.hpp"
 #include "Widgets/SideMenuPopup.hpp"
+#include "FilamentGroupPopup.hpp"
+
+
+#include <boost/property_tree/ptree_fwd.hpp>
 
 // BBS
 #include "BBLTopbar.hpp"
-
-
 #include "PrinterWebView.hpp"
 #include "calib_dlg.hpp"
+#include "MultiMachinePage.hpp"
 
 #define ENABEL_PRINT_ALL 0
 
@@ -86,7 +91,10 @@ protected:
 
 class MainFrame : public DPIFrame
 {
-    bool        m_loaded {false};
+#ifdef __APPLE__
+    bool     m_mac_fullscreen{false};
+#endif
+    bool     m_loaded {false};
     wxTimer* m_reset_title_text_colour_timer{ nullptr };
 
     wxString    m_qs_last_input_file = wxEmptyString;
@@ -94,7 +102,9 @@ class MainFrame : public DPIFrame
     wxString    m_last_config = wxEmptyString;
 
     wxMenuBar*  m_menubar{ nullptr };
-    wxMenu* publishMenu{ nullptr };
+    //wxMenu* publishMenu{ nullptr };
+    wxMenu *    m_calib_menu{nullptr};
+    bool        enable_multi_machine{ false };
 
 #if 0
     wxMenuItem* m_menu_item_repeat { nullptr }; // doesn't used now
@@ -130,6 +140,7 @@ class MainFrame : public DPIFrame
     bool can_delete() const;
     bool can_delete_all() const;
     bool can_reslice() const;
+    void bind_diff_dialog();
 
     // BBS
     wxBoxSizer* create_side_tools();
@@ -156,6 +167,8 @@ class MainFrame : public DPIFrame
         size_t FindFileInHistory(const wxString &file);
 
         void LoadThumbnails();
+
+        void SetMaxFiles(int max);
     private:
         std::deque<std::string> m_thumbnails;
         bool m_load_called = false;
@@ -193,34 +206,23 @@ protected:
 #endif
 
 public:
-
-    //BBS GUI refactor
-    enum PrintSelectType
-    {
-        ePrintAll = 0,
-        ePrintPlate = 1,
-        eExportSlicedFile = 2,
-        eExportGcode = 3,
-        eSendGcode = 4,
-        eSendToPrinter = 5,
-        eSendToPrinterAll = 6,
-        eUploadGcode = 7,
-        eExportAllSlicedFile = 8
-    };
-
     MainFrame();
     ~MainFrame() = default;
-
+#ifdef __APPLE__
+    bool get_mac_full_screen() { return m_mac_fullscreen; }
+#endif
     //BBS GUI refactor
     enum TabPosition
     {
-        tpHome = 0,
-        tp3DEditor = 1,
-        //tpSettings = 1,
-        tpPreview = 2,
-        tpMonitor = 3,
-        tpProject = 4,
-        toDebugTool = 5,
+        tpHome          = 0,
+        tp3DEditor      = 1,
+        tpPreview       = 2,
+        tpMonitor       = 3,
+        tpMultiDevice   = 4,
+        tpProject       = 5,
+        tpCalibration   = 6,
+        tpAuxiliary     = 7,
+        toDebugTool     = 8,
     };
 
     //BBS: add slice&&print status update logic
@@ -233,6 +235,20 @@ public:
         eEventPrintUpdate = 4
     };
 
+    // BBS GUI refactor
+    enum PrintSelectType {
+        ePrintAll            = 0,
+        ePrintPlate          = 1,
+        eExportSlicedFile    = 2,
+        eExportGcode         = 3,
+        eSendGcode           = 4,
+        eSendToPrinter       = 5,
+        eSendToPrinterAll    = 6,
+        eUploadGcode         = 7,
+        eExportAllSlicedFile = 8,
+        ePrintMultiMachine   = 9
+    };
+
     void update_layout();
 
 	// Called when closing the application and when switching the application language.
@@ -243,7 +259,12 @@ public:
     // BBS
     BBLTopbar* topbar() { return m_topbar; }
 
+    // for cali to update tab when save new preset
+    void update_filament_tab_ui();
+
     void        update_title();
+    void        set_max_recent_count(int max);
+
     void        show_publish_button(bool show);
 
 	void        update_title_colour_after_set_title();
@@ -295,6 +316,7 @@ public:
     void        load_config(const DynamicPrintConfig& config);
     //BBS: jump to monitor
     void        jump_to_monitor(std::string dev_id = "");
+    void        jump_to_multipage();
     //BBS: hint when jump to 3Deditor under preview only mode
     bool        preview_only_hint();
     // Select tab in m_tabpanel
@@ -303,6 +325,7 @@ public:
     void        select_tab(wxPanel* panel);
     void        select_tab(size_t tab = size_t(-1));
     void        request_select_tab(TabPosition pos);
+    int         get_calibration_curr_tab();
     void        select_view(const std::string& direction);
     // Propagate changed configuration from the Tab to the Plater and save changes to the AppConfig
     void        on_config_changed(DynamicPrintConfig* cfg) const ;
@@ -316,15 +339,16 @@ public:
     bool save_project_as(const wxString& filename = wxString());
 
     void        add_to_recent_projects(const wxString& filename);
-    void        get_recent_projects(boost::property_tree::wptree & tree);
+    void        get_recent_projects(boost::property_tree::wptree &tree, int images);
     void        open_recent_project(size_t file_id, wxString const & filename);
     void        remove_recent_project(size_t file_id, wxString const &filename);
 
     void        technology_changed();
 
+
     //BBS
     void        load_url(wxString url);
-    void        load_printer_url(wxString url);
+    void        load_printer_url(wxString url, wxString apikey = "");
     void        load_printer_url();
     bool        is_printer_view() const;
     void        refresh_plugin_tips();
@@ -337,6 +361,10 @@ public:
     Temp_Calibration_Dlg* m_temp_calib_dlg{ nullptr };
     MaxVolumetricSpeed_Test_Dlg* m_vol_test_dlg { nullptr };
     VFA_Test_Dlg* m_vfa_test_dlg { nullptr };
+    Retraction_Test_Dlg* m_retraction_calib_dlg{ nullptr };
+    Input_Shaping_Freq_Test_Dlg* m_IS_freq_calib_dlg{ nullptr };
+    Input_Shaping_Damp_Test_Dlg* m_IS_damp_calib_dlg{ nullptr };
+    Cornering_Test_Dlg* m_cornering_calib_dlg{ nullptr };
 
     // BBS. Replace title bar and menu bar with top bar.
     BBLTopbar*            m_topbar{ nullptr };
@@ -344,7 +372,12 @@ public:
     Plater*               m_plater { nullptr };
     //BBS: GUI refactor
     MonitorPanel*         m_monitor{ nullptr };
-    AuxiliaryPanel*       m_auxiliary{ nullptr };
+
+    //AuxiliaryPanel*       m_auxiliary{ nullptr };
+    MultiMachinePage*     m_multi_machine{ nullptr };
+    ProjectPanel*         m_project{ nullptr };
+
+    CalibrationPanel*     m_calibration{ nullptr };
     WebViewPanel*         m_webview { nullptr };
     PrinterWebView*       m_printer_view{nullptr};
     wxLogWindow*          m_log_window { nullptr };
@@ -360,13 +393,18 @@ public:
     wxWindow*             m_plater_page{ nullptr };
     PrintHostQueueDialog* m_printhost_queue_dlg;
 
-    // BBS
+    
     mutable int m_print_select{ ePrintAll };
     mutable int m_slice_select{ eSliceAll };
+    // Button* m_publish_btn{ nullptr };
     SideButton* m_slice_btn{ nullptr };
     SideButton* m_slice_option_btn{ nullptr };
     SideButton* m_print_btn{ nullptr };
     SideButton* m_print_option_btn{ nullptr };
+
+    SidePopup*  m_slice_option_pop_up{ nullptr };
+
+    FilamentGroupPopup* m_filament_group_popup{ nullptr };
     mutable bool          m_slice_enable{ true };
     mutable bool          m_print_enable{ true };
     bool get_enable_slice_status();
@@ -392,7 +430,7 @@ wxDECLARE_EVENT(EVT_USER_LOGIN_HANDLE, wxCommandEvent);
 wxDECLARE_EVENT(EVT_CHECK_PRIVACY_VER, wxCommandEvent);
 wxDECLARE_EVENT(EVT_CHECK_PRIVACY_SHOW, wxCommandEvent);
 wxDECLARE_EVENT(EVT_SHOW_IP_DIALOG, wxCommandEvent);
-wxDECLARE_EVENT(EVT_SET_SELECTED_MACHINE, wxCommandEvent);
+wxDECLARE_EVENT(EVT_UPDATE_MACHINE_LIST, wxCommandEvent);
 wxDECLARE_EVENT(EVT_UPDATE_PRESET_CB, SimpleEvent);
 
 

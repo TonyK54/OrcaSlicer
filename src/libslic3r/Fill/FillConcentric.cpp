@@ -19,7 +19,7 @@ void FillConcentric::_fill_surface_single(
     // no rotation is supported for this infill pattern
     BoundingBox bounding_box = expolygon.contour.bounding_box();
     
-    coord_t min_spacing = scale_(this->spacing);
+    coord_t min_spacing = scale_(this->spacing) * params.multiline;
     coord_t distance = coord_t(min_spacing / params.density);
     
     if (params.density > 0.9999f && !params.dont_adjust) {
@@ -27,8 +27,12 @@ void FillConcentric::_fill_surface_single(
         this->spacing = unscale<double>(distance);
     }
 
-    Polygons   loops = to_polygons(expolygon);
-    ExPolygons last { std::move(expolygon) };
+    // Contract surface polygon by half line width to avoid excesive overlap with perimeter
+    ExPolygons contracted = offset_ex(expolygon, -float(scale_(0.5 * (params.multiline - 1) * this->spacing )));
+
+    Polygons loops = to_polygons(contracted);
+
+    ExPolygons last { std::move(contracted) };
     while (! last.empty()) {
         last = offset2_ex(last, -(distance + min_spacing/2), +min_spacing/2);
         append(loops, to_polygons(last));
@@ -45,6 +49,9 @@ void FillConcentric::_fill_surface_single(
         polylines_out.emplace_back(loop.split_at_index(last_pos.nearest_point_index(loop.points)));
         last_pos = polylines_out.back().last_point();
     }
+
+    // Apply multiline offset if needed
+    multiline_fill(polylines_out, params, spacing);
 
     // clip the paths to prevent the extruder from getting exactly on the first point of the loop
     // Keep valid paths only.
@@ -109,14 +116,8 @@ void FillConcentric::_fill_surface_single(const FillParams& params,
                 continue;
 
             ThickPolyline thick_polyline = Arachne::to_thick_polyline(*extrusion);
-            if (extrusion->is_closed && thick_polyline.points.front() == thick_polyline.points.back() && thick_polyline.width.front() == thick_polyline.width.back()) {
-                thick_polyline.points.pop_back();
-                assert(thick_polyline.points.size() * 2 == thick_polyline.width.size());
-                int nearest_idx = last_pos.nearest_point_index(thick_polyline.points);
-                std::rotate(thick_polyline.points.begin(), thick_polyline.points.begin() + nearest_idx, thick_polyline.points.end());
-                std::rotate(thick_polyline.width.begin(), thick_polyline.width.begin() + 2 * nearest_idx, thick_polyline.width.end());
-                thick_polyline.points.emplace_back(thick_polyline.points.front());
-            }
+            if (extrusion->is_closed)
+                thick_polyline.start_at_index(last_pos.nearest_point_index(thick_polyline.points));
             thick_polylines_out.emplace_back(std::move(thick_polyline));
             last_pos = thick_polylines_out.back().last_point();
         }

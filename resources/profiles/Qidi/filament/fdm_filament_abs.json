@@ -1,32 +1,35 @@
 {
     "type": "filament",
     "name": "fdm_filament_abs",
+    "inherits": "fdm_filament_common",
     "from": "system",
     "instantiation": "false",
-    "inherits": "fdm_filament_common",
-    "cool_plate_temp" : [
-        "105"
+    "activate_chamber_temp_control": [
+        "0"
     ],
-    "eng_plate_temp" : [
-        "105"
+    "cool_plate_temp": [
+        "90"
     ],
-    "hot_plate_temp" : [
-        "105"
+    "eng_plate_temp": [
+        "90"
     ],
-    "textured_plate_temp" : [
-        "105"
+    "hot_plate_temp": [
+        "90"
     ],
-    "cool_plate_temp_initial_layer" : [
-        "105"
+    "textured_plate_temp": [
+        "90"
     ],
-    "eng_plate_temp_initial_layer" : [
-        "105"
+    "cool_plate_temp_initial_layer": [
+        "90"
     ],
-    "hot_plate_temp_initial_layer" : [
-        "105"
+    "eng_plate_temp_initial_layer": [
+        "90"
     ],
-    "textured_plate_temp_initial_layer" : [
-        "105"
+    "hot_plate_temp_initial_layer": [
+        "90"
+    ],
+    "textured_plate_temp_initial_layer": [
+        "90"
     ],
     "slow_down_for_layer_cooling": [
         "1"
@@ -38,28 +41,28 @@
         "30"
     ],
     "filament_max_volumetric_speed": [
-        "28.6"
+        "20"
     ],
     "filament_type": [
         "ABS"
     ],
     "filament_density": [
-        "1.04"
+        "1.24"
     ],
     "filament_cost": [
         "20"
     ],
     "nozzle_temperature_initial_layer": [
-        "260"
+        "250"
     ],
     "reduce_fan_stop_start_freq": [
         "1"
     ],
     "fan_max_speed": [
-        "80"
+        "50"
     ],
     "fan_min_speed": [
-        "10"
+        "20"
     ],
     "overhang_fan_threshold": [
         "25%"
@@ -68,10 +71,10 @@
         "80"
     ],
     "nozzle_temperature": [
-        "260"
+        "270"
     ],
     "temperature_vitrification": [
-        "110"
+        "100"
     ],
     "nozzle_temperature_range_low": [
         "240"
@@ -79,10 +82,16 @@
     "nozzle_temperature_range_high": [
         "270"
     ],
+    "activate_air_filtration": [
+        "1"
+    ],
+    "during_print_exhaust_fan_speed": [
+        "40"
+    ],
     "slow_down_min_speed": [
         "10"
     ],
     "slow_down_layer_time": [
-        "3"
+        "4"
     ]
 }

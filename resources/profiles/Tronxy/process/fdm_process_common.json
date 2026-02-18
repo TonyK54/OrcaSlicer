@@ -26,7 +26,7 @@
     "line_width": "0.4",
     "infill_direction": "45",
     "sparse_infill_density": "15%",
-    "sparse_infill_pattern": "grid",
+    "sparse_infill_pattern": "crosshatch",
     "initial_layer_acceleration": "500",
     "initial_layer_line_width": "0.5",
     "initial_layer_print_height": "0.2",
@@ -79,7 +79,7 @@
     "tree_support_branch_angle": "45",
     "tree_support_wall_count": "0",
     "detect_thin_wall": "0",
-    "top_surface_pattern": "monotonic",
+    "top_surface_pattern": "monotonicline",
     "top_surface_line_width": "0.4",
     "top_shell_layers": "3",
     "top_shell_thickness": "0.8",
@@ -94,10 +94,10 @@
     "travel_speed": "350",
     "enable_prime_tower": "0",
     "wipe_tower_no_sparse_layers": "0",
-    "prime_tower_width": "35",
+    "prime_tower_width": "60",
     "xy_hole_compensation": "0",
     "xy_contour_compensation": "0",
-    "compatible_printers": [ 
-	"Tronxy X5SA 400 0.4 nozzle"
+    "compatible_printers": [
+        "Tronxy X5SA 400 0.4 nozzle"
     ]
 }

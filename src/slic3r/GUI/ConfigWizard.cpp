@@ -36,6 +36,7 @@
 #include "libslic3r/Config.hpp"
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Model.hpp"
+#include "libslic3r/Color.hpp"
 #include "GUI.hpp"
 #include "GUI_App.hpp"
 #include "GUI_Utils.hpp"
@@ -122,18 +123,18 @@ BundleMap BundleMap::load()
     const auto vendor_dir = (boost::filesystem::path(Slic3r::data_dir()) / PRESET_SYSTEM_DIR).make_preferred();
     const auto rsrc_vendor_dir = (boost::filesystem::path(resources_dir()) / "profiles").make_preferred();
 
-    //BBS: add BBL as default
-    //BBS: add json logic for vendor bundle
-    auto bbl_bundle_path = (vendor_dir / PresetBundle::BBL_BUNDLE).replace_extension(".json");
-    auto bbl_bundle_rsrc = false;
-    if (!boost::filesystem::exists(bbl_bundle_path)) {
-        bbl_bundle_path = (rsrc_vendor_dir / PresetBundle::BBL_BUNDLE).replace_extension(".json");
-        bbl_bundle_rsrc = true;
+    //Orca: add custom as default
+    //Orca: add json logic for vendor bundle
+    auto orca_bundle_path = (vendor_dir / PresetBundle::ORCA_DEFAULT_BUNDLE).replace_extension(".json");
+    auto orca_bundle_rsrc = false;
+    if (!boost::filesystem::exists(orca_bundle_path)) {
+        orca_bundle_path = (rsrc_vendor_dir / PresetBundle::ORCA_DEFAULT_BUNDLE).replace_extension(".json");
+        orca_bundle_rsrc = true;
     }
     {
         Bundle bbl_bundle;
-        if (bbl_bundle.load(std::move(bbl_bundle_path), bbl_bundle_rsrc, true))
-            res.emplace(PresetBundle::BBL_BUNDLE, std::move(bbl_bundle));
+        if (bbl_bundle.load(std::move(orca_bundle_path), orca_bundle_rsrc, true))
+            res.emplace(PresetBundle::ORCA_DEFAULT_BUNDLE, std::move(bbl_bundle));
     }
 
     // Load the other bundles in the datadir/vendor directory
@@ -162,10 +163,10 @@ BundleMap BundleMap::load()
 
 Bundle& BundleMap::bbl_bundle()
 {
-    //BBS: add BBL as default
-    auto it = find(PresetBundle::BBL_BUNDLE);
+    //Orca: add custom as default
+    auto it = find(PresetBundle::ORCA_DEFAULT_BUNDLE);
     if (it == end()) {
-        throw Slic3r::RuntimeError("ConfigWizard: Internal error in BundleMap: BBL_BUNDLE not loaded");
+        throw Slic3r::RuntimeError("ConfigWizard: Internal error in BundleMap: ORCA_DEFAULT_BUNDLE not loaded");
     }
 
     return it->second;
@@ -624,12 +625,11 @@ std::set<std::string> PagePrinters::get_selected_models()
 
 void PagePrinters::set_run_reason(ConfigWizard::RunReason run_reason)
 {
-    //BBS: add BBL as default
+    //Orca: add custom as default
     if (is_primary_printer_page
         && (run_reason == ConfigWizard::RR_DATA_EMPTY || run_reason == ConfigWizard::RR_DATA_LEGACY)
         && printer_pickers.size() > 0 
-        && printer_pickers[0]->vendor_id == PresetBundle::BBL_BUNDLE) {
-        //BBS: select alll bbs machine by default
+        && printer_pickers[0]->vendor_id == PresetBundle::ORCA_DEFAULT_BUNDLE) {
         //printer_pickers[0]->select_one(0, true);
         printer_pickers[0]->select_all(true);
     }
@@ -777,9 +777,9 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
 //        wxSystemSettings::GetColour(wxSYS_COLOUR_MENU);
 //#endif
 //#endif
-    const auto bgr_clr_str = wxString::Format(wxT("#%02X%02X%02X"), bgr_clr.Red(), bgr_clr.Green(), bgr_clr.Blue());
-    const auto text_clr = wxGetApp().get_label_clr_default();//wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT);
-    const auto text_clr_str = wxString::Format(wxT("#%02X%02X%02X"), text_clr.Red(), text_clr.Green(), text_clr.Blue());
+    const auto text_clr = wxGetApp().get_label_clr_default();
+    const auto bgr_clr_str = encode_color(ColorRGB(bgr_clr.Red(), bgr_clr.Green(), bgr_clr.Blue()));
+    const auto text_clr_str = encode_color(ColorRGB(text_clr.Red(), text_clr.Green(), text_clr.Blue()));
     wxString first_line = format_wxstr(_L("%1% marked with <b>*</b> are <b>not</b> compatible with some installed printers."), materials->technology == T_FFF ? _L("Filaments") : _L("SLA materials"));
     wxString text;
     if (all_printers) {
@@ -1278,7 +1278,7 @@ PageBedShape::PageBedShape(ConfigWizard* parent)
 {
     append_text(_L("Set the shape of your printer's bed."));
 
-    shape_panel->build_panel(*wizard_p()->custom_config->option<ConfigOptionPoints>("printable_area"),
+    shape_panel->build_panel(wizard_p()->custom_config->option<ConfigOptionPoints>("printable_area")->values,
         *wizard_p()->custom_config->option<ConfigOptionString>("bed_custom_texture"),
         *wizard_p()->custom_config->option<ConfigOptionString>("bed_custom_model"));
 
@@ -1390,7 +1390,7 @@ void PageDiameters::apply_custom_config(DynamicPrintConfig &config)
     auto set_extrusion_width = [&config, opt_nozzle](const char *key, double dmr) {
         char buf[64]; // locales don't matter here (sprintf/atof)
         sprintf(buf, "%.2lf", dmr * opt_nozzle->values.front() / 0.4);
-        config.set_key_value(key, new ConfigOptionFloat(atof(buf)));
+        config.set_key_value(key, new ConfigOptionFloatOrPercent(atof(buf),false));
     };
 
     set_extrusion_width("support_line_width", 0.35);
@@ -1448,7 +1448,7 @@ PageTemperatures::PageTemperatures(ConfigWizard *parent)
 
     auto *sizer_extr = new wxFlexGridSizer(3, 5, 5);
     auto *text_extr = new wxStaticText(this, wxID_ANY, _L("Extrusion Temperature:"));
-    auto *unit_extr = new wxStaticText(this, wxID_ANY, _L("°C"));
+    auto *unit_extr = new wxStaticText(this, wxID_ANY, _L("\u2103" /* °C */));
     sizer_extr->AddGrowableCol(0, 1);
     sizer_extr->Add(text_extr, 0, wxALIGN_CENTRE_VERTICAL);
     sizer_extr->Add(spin_extr);
@@ -1462,7 +1462,7 @@ PageTemperatures::PageTemperatures(ConfigWizard *parent)
 
     auto *sizer_bed = new wxFlexGridSizer(3, 5, 5);
     auto *text_bed = new wxStaticText(this, wxID_ANY, _L("Bed Temperature:"));
-    auto *unit_bed = new wxStaticText(this, wxID_ANY, _L("°C"));
+    auto *unit_bed = new wxStaticText(this, wxID_ANY, _L("\u2103" /* °C */));
     sizer_bed->AddGrowableCol(0, 1);
     sizer_bed->Add(text_bed, 0, wxALIGN_CENTRE_VERTICAL);
     sizer_bed->Add(spin_bed);
@@ -1487,7 +1487,7 @@ void PageTemperatures::apply_custom_config(DynamicPrintConfig& config)
 
 ConfigWizardIndex::ConfigWizardIndex(wxWindow *parent)
     : wxPanel(parent)
-    , bg(ScalableBitmap(parent, "BambuStudio_192px_transparent.png", 192))
+    , bg(ScalableBitmap(parent, "OrcaSlicer_192px_transparent.png", 192))
     , bullet_black(ScalableBitmap(parent, "bullet_black.png"))
     , bullet_blue(ScalableBitmap(parent, "bullet_blue.png"))
     , bullet_white(ScalableBitmap(parent, "bullet_white.png"))
@@ -1940,8 +1940,8 @@ void ConfigWizard::priv::create_3rdparty_pages()
 {
     for (const auto &pair : bundles) {
         const VendorProfile *vendor = pair.second.vendor_profile;
-        //BBS: add BBL as default
-        if (vendor->id == PresetBundle::BBL_BUNDLE) { continue; }
+        //Orca: add custom as default
+        if (vendor->id == PresetBundle::ORCA_DEFAULT_BUNDLE) { continue; }
 
         bool is_fff_technology = false;
         bool is_sla_technology = false;
@@ -2404,9 +2404,9 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
     bool check_unsaved_preset_changes = false;
     if (check_unsaved_preset_changes)
         header = _L("All user presets will be deleted.");
-    int act_btns = UnsavedChangesDialog::ActionButtons::KEEP;
+    int act_btns = ActionButtons::KEEP;
     if (!check_unsaved_preset_changes)
-        act_btns |= UnsavedChangesDialog::ActionButtons::SAVE;
+        act_btns |= ActionButtons::SAVE;
 
     // Install bundles from resources if needed:
     std::vector<std::string> install_bundles;
@@ -2599,7 +2599,7 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
         custom_config->set_key_value("filament_colour", wxGetApp().preset_bundle->project_config.option("filament_colour"));
         const std::string profile_name = page_custom->profile_name();
         Semver semver(SLIC3R_VERSION);
-        preset_bundle->load_config_from_wizard(profile_name, *custom_config, semver, true);
+        preset_bundle->load_config_from_wizard(profile_name, *custom_config, semver);
 
         wxGetApp().plater()->sidebar().update_presets(Slic3r::Preset::Type::TYPE_PRINTER);
         wxGetApp().plater()->sidebar().update_presets(Slic3r::Preset::Type::TYPE_FILAMENT);
@@ -2734,6 +2734,16 @@ ConfigWizard::ConfigWizard(wxWindow *parent)
     on_window_geometry(this, [this]() {
         p->init_dialog_size();
     });
+
+    p->btn_prev->Bind(wxEVT_BUTTON, [this](const wxCommandEvent&)
+        {
+            ConfigWizardPage* active_page = this->p->index->active_page();
+            if ((active_page == p->page_filaments || active_page == p->page_sla_materials) &&
+                !p->check_and_install_missing_materials(dynamic_cast<PageMaterials*>(active_page)->materials->technology))
+                // In that case don't leave the page and the function above queried the user whether to install default materials.
+                return;
+            this->p->index->go_prev();
+        });
 
     p->btn_next->Bind(wxEVT_BUTTON, [this](const wxCommandEvent &)
     {

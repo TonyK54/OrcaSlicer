@@ -17,13 +17,15 @@ namespace Slic3r {
 class BBLProject;
 class BBLProfile;
 class BBLTask;
+class BBLModelTask;
 
 
 enum MachineBedType {
     //BED_TYPE_AUTO = 0,
     BED_TYPE_PC = 0,
-    BED_TYPE_PEI,
     BED_TYPE_PE,
+    BED_TYPE_PEI,
+    BED_TYPE_PTE,
     BED_TYPE_COUNT,
 };
 
@@ -35,15 +37,61 @@ enum MappingResult {
 
 struct FilamentInfo
 {
-    int         id;         // filament id = extruder id, start with 0.
+    int         id{0};         // filament id = extruder id, start with 0.
     std::string type;
     std::string color;
     std::string filament_id;
-    float       used_m;
-    float       used_g;
-    int         tray_id;    // start with 0
-    float       distance;
+    std::string brand;
+    float       used_m{0.f};
+    float       used_g{0.f};
+    int         tray_id{0}; // start with 0
+    float       distance{0.f};
+    int         ctype = 0;
+    std::vector<std::string> colors = std::vector<std::string>();
     int         mapping_result = 0;
+
+    /*for new ams mapping*/
+    std::string ams_id;
+    std::string slot_id;
+
+public:
+    int get_ams_id() const
+    {
+        if (ams_id.empty()) { return -1; };
+
+        try
+        {
+            return stoi(ams_id);
+        }
+        catch (...) {};
+
+        return -1;
+    };
+
+    int get_slot_id() const
+    {
+        if (slot_id.empty()) { return -1; };
+
+        try {
+            return stoi(slot_id);
+        } catch (...) {};
+
+        return -1;
+    };
+
+    /*copied from AmsTray::get_display_filament_type()*/
+    std::string get_display_filament_type() const
+    {
+        if (type == "PLA-S")
+            return "Sup.PLA";
+        else if (type == "PA-S")
+            return "Sup.PA";
+        else if (type == "ABS-S")
+            return "Sup.ABS";
+        else
+            return type;
+        return type;
+    }
 };
 
 class BBLSliceInfo {
@@ -94,6 +142,21 @@ enum TaskUserOptions {
     OPTIONS_RECORD_TIMELAPSE = 4
 };
 
+class BBLModelTask {
+public:
+    BBLModelTask();
+    ~BBLModelTask() {}
+
+    int                         job_id;
+    int                         design_id;
+    int                         profile_id;
+    int                         instance_id;
+    std::string                 task_id;
+    std::string                 model_id;
+    std::string                 model_name;
+    std::string                 profile_name;
+};
+
 class BBLSubTask {
 public:
     enum SubTaskStatus {
@@ -111,6 +174,7 @@ public:
     BBLSubTask(const BBLSubTask& obj) {
         task_id             = obj.task_id;
         parent_id           = obj.parent_id;
+        task_model_id       = obj.task_model_id;
         task_project_id     = obj.task_project_id;
         task_profile_id     = obj.task_profile_id;
         task_name           = obj.task_name;
@@ -126,9 +190,14 @@ public:
         task_flow_cali      = obj.task_flow_cali;
         task_vibration_cali = obj.task_vibration_cali;
         task_layer_inspect  = obj.task_layer_inspect;
+
+        job_id              = obj.job_id;
+        origin_model_name   = obj.origin_model_name;
+        origin_profile_name = obj.origin_profile_name;
     }
 
     std::string     task_id;            /* plate id */
+    std::string     task_model_id;      /* model id */
     std::string     task_project_id;    /* project id */
     std::string     task_profile_id;    /* profile id*/
     std::string     task_name;          /* task name, generally filename as task name */
@@ -160,10 +229,16 @@ public:
     BBLTask*        parent_task_;
     std::string     parent_id;
 
+    int             job_id;
+    std::string     origin_model_name;
+    std::string     origin_profile_name;
+
     int parse_content_json(std::string json_str);
     static BBLSubTask::SubTaskStatus parse_status(std::string status);
     static BBLSubTask::SubTaskStatus parse_user_service_task_status(int status);
 };
+
+typedef std::function<void(BBLModelTask* subtask)> OnGetSubTaskFn;
 
 class BBLTask {
 public:
@@ -185,6 +260,7 @@ public:
     std::wstring                task_dst_url;       /* put task to dest url in machine */
     BBLProfile*                 profile_;
     std::string                 task_project_id;
+    std::string                 task_model_id;
     std::string                 task_profile_id;
     std::vector<BBLSubTask*>    subtasks;
     std::map<std::string, BBLSliceInfo*> slice_info; /* slice info of subtasks, key: plate idx, 1, 2, 3, etc... */

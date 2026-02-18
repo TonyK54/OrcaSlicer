@@ -33,7 +33,7 @@ protected:
     wxBitmap        m_diagram_bmp;
     wxImage         m_diagram_img;
 
-    MachineObject*  m_obj;
+    MachineObject*  m_obj{ nullptr };
     wxString        m_input_access_code;
 public:
     ConnectPrinterDialog(wxWindow *      parent,
@@ -49,7 +49,7 @@ public:
     void init_bitmap();
     void set_machine_object(MachineObject* obj);
     void on_input_enter(wxCommandEvent& evt);
-    void on_button_confirm(wxCommandEvent &event); 
+    void on_button_confirm(wxCommandEvent &event);
     void on_dpi_changed(const wxRect &suggested_rect) override;
 };
 }} // namespace Slic3r::GUI

@@ -19,14 +19,16 @@
 
 #ifdef __cplusplus
 extern "C" {
+#else
+#include <stdbool.h>
 #endif // __cplusplus
 
-#ifndef __cplusplus
-#include <stdbool.h>
-#endif
-
 #ifdef _WIN32
+#ifdef __cplusplus
     typedef wchar_t tchar;
+#else
+    typedef unsigned short tchar;
+#endif
 #else
     typedef char tchar;
 #endif
@@ -118,6 +120,8 @@ BAMBU_EXPORT void BAMBU_FUNC(Bambu_SetLogger)(Bambu_Tunnel tunnel, Logger logger
 BAMBU_EXPORT int BAMBU_FUNC(Bambu_Open)(Bambu_Tunnel tunnel);
 
 BAMBU_EXPORT int BAMBU_FUNC(Bambu_StartStream)(Bambu_Tunnel tunnel, bool video);
+
+BAMBU_EXPORT int BAMBU_FUNC(Bambu_StartStreamEx)(Bambu_Tunnel tunnel, int type);
 
 BAMBU_EXPORT int BAMBU_FUNC(Bambu_GetStreamCount)(Bambu_Tunnel tunnel);
 

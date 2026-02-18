@@ -1,5 +1,6 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/Format/DRC.hpp"
 #include "AppConfig.hpp"
 //BBS
 #include "Preset.hpp"
@@ -12,10 +13,10 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
+#include <sstream>
 
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
-#include <boost/nowide/cenv.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/property_tree/ini_parser.hpp>
 #include <boost/property_tree/ptree_fwd.hpp>
@@ -38,11 +39,13 @@ using namespace nlohmann;
 
 namespace Slic3r {
 
-static const std::string VERSION_CHECK_URL = "https://api.github.com/repos/softfever/OrcaSlicer/releases";
+static const std::string VERSION_CHECK_URL = "https://check-version.orcaslicer.com/latest";
+static const std::string PROFILE_UPDATE_URL = "https://api.github.com/repos/OrcaSlicer/orcaslicer-profiles/releases/tags";
 static const std::string MODELS_STR = "models";
 
 const std::string AppConfig::SECTION_FILAMENTS = "filaments";
 const std::string AppConfig::SECTION_MATERIALS = "sla_materials";
+const std::string AppConfig::SECTION_EMBOSS_STYLE = "font";
 
 std::string AppConfig::get_language_code()
 {
@@ -80,6 +83,15 @@ std::string AppConfig::get_hms_host()
 // #endif
 }
 
+bool AppConfig::get_stealth_mode()
+{
+    // always return true when user did not finish setup wizard yet
+    if (!get_bool("firstguide","finish")) {
+        return true;
+    }
+    return get_bool("stealth_mode");
+}
+
 void AppConfig::reset()
 {
     m_storage.clear();
@@ -101,11 +113,11 @@ void AppConfig::set_defaults()
         if (get("background_processing").empty())
             set_bool("background_processing", false);
 #endif
+        if (get("auto_slice_after_change").empty())
+            set_bool("auto_slice_after_change", false);
 
-#ifdef SUPPORT_SHOW_DROP_PROJECT
-        if (get("show_drop_project_dialog").empty())
-            set_bool("show_drop_project_dialog", true);
-#endif
+        if (get("auto_slice_change_delay_seconds").empty())
+            set("auto_slice_change_delay_seconds", "1");
 
         if (get("drop_project_action").empty())
             set_bool("drop_project_action", true);
@@ -113,6 +125,8 @@ void AppConfig::set_defaults()
 #ifdef _WIN32
         if (get("associate_3mf").empty())
             set_bool("associate_3mf", false);
+        if (get("associate_drc").empty())
+            set_bool("associate_drc", false);
         if (get("associate_stl").empty())
             set_bool("associate_stl", false);
         if (get("associate_step").empty())
@@ -123,6 +137,25 @@ void AppConfig::set_defaults()
         // remove old 'use_legacy_opengl' parameter from this config, if present
         if (!get("use_legacy_opengl").empty())
             erase("app", "use_legacy_opengl");
+
+        // Migrate legacy_networking boolean to network_plugin_version string
+        std::string legacy_networking = get("legacy_networking");
+        std::string network_version = get("network_plugin_version");
+
+        if (!legacy_networking.empty()) {
+            // Old legacy_networking setting exists - migrate it
+            bool was_legacy = (legacy_networking == "true" || legacy_networking == "1");
+
+            if (was_legacy && network_version.empty()) {
+                // User had legacy mode enabled - set to legacy version number
+                BOOST_LOG_TRIVIAL(info) << "Migrating legacy_networking=true to network_plugin_version=01.10.01.01";
+                set_network_plugin_version(BAMBU_NETWORK_AGENT_VERSION_LEGACY);
+            }
+            // Note: If was_legacy=false, we leave the version empty and let the GUI layer set it to the latest version
+
+            // Remove the old setting
+            erase("app", "legacy_networking");
+        }
 
 #ifdef __APPLE__
         if (get("use_retina_opengl").empty())
@@ -149,6 +182,9 @@ void AppConfig::set_defaults()
 
         if (get("use_inches").empty())
             set("use_inches", "0");
+
+        if (get("default_page").empty())
+            set("default_page", "0");
     }
     else {
 #ifdef _WIN32
@@ -157,27 +193,72 @@ void AppConfig::set_defaults()
 #endif // _WIN32
     }
 
+    if (get("seq_top_layer_only").empty())
+        set("seq_top_layer_only", "1");
+
     if (get("use_perspective_camera").empty())
         set_bool("use_perspective_camera", true);
 
-#ifdef SUPPORT_FREE_CAMERA
+    if (get("auto_perspective").empty())
+        set_bool("auto_perspective", false);
+
     if (get("use_free_camera").empty())
         set_bool("use_free_camera", false);
-#endif
 
-#ifdef SUPPORT_REVERSE_MOUSE_ZOOM
+    if (get("camera_navigation_style").empty())
+        set("camera_navigation_style", "0");
+
+    if (get("swap_mouse_buttons").empty())
+        set_bool("swap_mouse_buttons", false);
+
     if (get("reverse_mouse_wheel_zoom").empty())
         set_bool("reverse_mouse_wheel_zoom", false);
-#endif
+
+    if (get("enable_append_color_by_sync_ams").empty())
+        set_bool("enable_append_color_by_sync_ams", true);
+    if (get("enable_merge_color_by_sync_ams").empty())
+        set_bool("enable_merge_color_by_sync_ams", false);
+    if (get("ams_sync_match_full_use_color_dist").empty())
+        set_bool("ams_sync_match_full_use_color_dist", false);
+    if (get("sync_ams_filament_mode").empty())
+        set("sync_ams_filament_mode", "0"); // 0: filament+color, 1: color only
+
+    if (get("camera_orbit_mult").empty())
+        set("camera_orbit_mult", "1.0");
+
+    if (get("export_sources_full_pathnames").empty())
+        set_bool("export_sources_full_pathnames", false);
+
+    if (get("zoom_to_mouse").empty())
+        set_bool("zoom_to_mouse", false);
 
 //#ifdef SUPPORT_SHOW_HINTS
     if (get("show_hints").empty())
-        set_bool("show_hints", true);
+        set_bool("show_hints", false);
 //#endif
+    if (get("enable_multi_machine").empty())
+        set_bool("enable_multi_machine", false);
+
+    if (get("drc_bits").empty())
+        set("drc_bits", DRC_BITS_DEFAULT_STR);
 
     if (get("show_gcode_window").empty())
         set_bool("show_gcode_window", true);
 
+    if (get("show_3d_navigator").empty())
+        set_bool("show_3d_navigator", true);
+
+    if (get("show_outline").empty())
+        set_bool("show_outline", false);
+    
+    if (get("show_axes").empty())
+        set_bool("show_axes", true);
+
+    if (get("show_labels").empty())
+        set_bool("show_labels", false);
+
+    if (get("show_overhang").empty())
+        set_bool("show_overhang", false);
 
 #ifdef _WIN32
 
@@ -204,11 +285,17 @@ void AppConfig::set_defaults()
     if (get("developer_mode").empty())
         set_bool("developer_mode", false);
 
-    if (get("severity_level").empty())
-        set("severity_level", "info");
+    if (get("enable_ssl_for_mqtt").empty())
+        set_bool("enable_ssl_for_mqtt", true);
 
-    if (get("dump_video").empty())
-        set_bool("dump_video", false);
+    if (get("enable_ssl_for_ftp").empty())
+        set_bool("enable_ssl_for_ftp", true);
+
+    if (get("log_severity_level").empty())
+        set("log_severity_level", "warning");
+
+    if (get("internal_developer_mode").empty())
+        set_bool("internal_developer_mode", false);
 
     // BBS
     if (get("preset_folder").empty())
@@ -218,6 +305,34 @@ void AppConfig::set_defaults()
     if (get("slicer_uuid").empty()) {
         boost::uuids::uuid uuid = boost::uuids::random_generator()();
         set("slicer_uuid", to_string(uuid));
+    }
+
+    // Orca
+    if (get("stealth_mode").empty()) {
+        set_bool("stealth_mode", false);
+    }
+    if (get("allow_abnormal_storage").empty()) {
+        set_bool("allow_abnormal_storage", false);
+    }
+#ifdef __linux__
+    if (get(SETTING_USE_ENCRYPTED_TOKEN_FILE).empty())
+        set_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE, true);
+#else
+    if (get(SETTING_USE_ENCRYPTED_TOKEN_FILE).empty())
+        set_bool(SETTING_USE_ENCRYPTED_TOKEN_FILE, false);
+#endif
+
+    if(get("check_stable_update_only").empty()) {
+        set_bool("check_stable_update_only", false);
+    }
+
+    // Orca
+    if(get("show_splash_screen").empty()) {
+        set_bool("show_splash_screen", true);
+    }
+
+    if(get("auto_arrange").empty()) {
+        set_bool("auto_arrange", true);
     }
 
     if (get("show_model_mesh").empty()) {
@@ -234,6 +349,38 @@ void AppConfig::set_defaults()
 
     if (get("show_daily_tips").empty()) {
         set_bool("show_daily_tips", true);
+    }
+
+    if (get("auto_calculate_flush").empty()){
+        set("auto_calculate_flush","all");
+    }
+
+    if (get("show_canvas_zoom_button").empty()) {
+        set_bool("show_canvas_zoom_button", true);
+    }
+
+    if (get("remember_printer_config").empty()) {
+        set_bool("remember_printer_config", true);
+    }
+
+    if (get("group_filament_presets").empty()) {
+        set("group_filament_presets", "1"); // All "0" / None "1" / By Type "2" / By Vendor "3"
+    }
+
+    if (get("enable_high_low_temp_mixed_printing").empty()){
+        set_bool("enable_high_low_temp_mixed_printing", false);
+    }
+
+    if (get("ignore_ext_filament_in_filament_map").empty()){
+        set_bool("ignore_ext_filament_in_filament_map", false);
+    }
+
+    if (get("pop_up_filament_map_dialog").empty()){
+        set_bool("pop_up_filament_map_dialog", false);
+    }
+
+    if (get("prefered_filament_map_mode").empty()){
+        set("prefered_filament_map_mode",ConfigOptionEnum<FilamentMapMode>::get_enum_names()[FilamentMapMode::fmmAutoForFlush]);
     }
 
     if (get("show_home_page").empty()) {
@@ -288,8 +435,28 @@ void AppConfig::set_defaults()
         set("mouse_wheel", "0");
     }
 
-    if (get("backup_switch").empty()) {
-        set_bool("backup_switch", false);
+    if (get(SETTING_PROJECT_LOAD_BEHAVIOUR).empty()) {
+        set(SETTING_PROJECT_LOAD_BEHAVIOUR, OPTION_PROJECT_LOAD_BEHAVIOUR_ASK_WHEN_RELEVANT);
+    }
+
+    if (get("max_recent_count").empty()) {
+        set("max_recent_count", "18");
+    }
+
+    if (get("recent_models").empty()) {
+        set("recent_models", "0");
+    }
+
+    // if (get("staff_pick_switch").empty()) {
+    //     set_bool("staff_pick_switch", false);
+    // }
+
+    if (get("sync_system_preset").empty()) {
+        set_bool("sync_system_preset", true);
+    }
+
+    if (get("backup_switch").empty() || get("version") < "01.06.00.00") {
+        set_bool("backup_switch", true);
     }
 
     if (get("backup_interval").empty()) {
@@ -298,6 +465,14 @@ void AppConfig::set_defaults()
 
     if (get("curr_bed_type").empty()) {
         set("curr_bed_type", "1");
+    }
+
+    if (get("sending_interval").empty()) {
+        set("sending_interval", "5");
+    }
+
+    if (get("max_send").empty()) {
+        set("max_send", "3");
     }
 
 // #if BBL_RELEASE_TO_PUBLIC
@@ -310,8 +485,36 @@ void AppConfig::set_defaults()
 //     }
 // #endif
 
+    if (get("allow_ip_resolve").empty())
+        set_bool("allow_ip_resolve", true);
+
     if (get("presets", "filament_colors").empty()) {
         set_str("presets", "filament_colors", "#F2754E");
+    }
+
+    if (get("print", "bed_leveling").empty()) {
+        set_str("print", "bed_leveling", "1");
+    }
+    if (get("print", "flow_cali").empty()) {
+        set_str("print", "flow_cali", "1");
+    }
+    if (get("print", "timelapse").empty()) {
+        set_str("print", "timelapse", "1");
+    }
+
+    if (get("enable_step_mesh_setting").empty()) {
+        set_bool("enable_step_mesh_setting", true);
+    }
+    if (get("linear_defletion", "angle_defletion").empty()) {
+        set("linear_defletion", "0.003");
+        set("angle_defletion", "0.5");
+    }
+    if (get("is_split_compound").empty()) {
+        set_bool("is_split_compound", false);
+    }
+
+    if(get("installed_networking").empty()) {
+        set_bool("installed_networking", false);
     }
 
     // Remove legacy window positions/sizes
@@ -321,6 +524,7 @@ void AppConfig::set_defaults()
     erase("app", "object_settings_maximized");
     erase("app", "object_settings_pos");
     erase("app", "object_settings_size");
+    erase("app", "severity_level");
 }
 
 #ifdef WIN32
@@ -484,6 +688,54 @@ std::string AppConfig::load()
                         m_storage[it.key()][iter.key()] = iter.value().get<std::string>();
                     }
                 }
+            } else if (it.key() == "calis") {
+                for (auto &calis_j : it.value()) {
+                    PrinterCaliInfo cali_info;
+                    if (calis_j.contains("dev_id"))
+                        cali_info.dev_id = calis_j["dev_id"].get<std::string>();
+                    if (calis_j.contains("cali_finished"))
+                        cali_info.cali_finished = bool(calis_j["cali_finished"].get<int>());
+                    if (calis_j.contains("flow_ratio"))
+                        cali_info.cache_flow_ratio = calis_j["flow_ratio"].get<float>();
+                    if (calis_j.contains("cache_flow_rate_calibration_type"))
+                        cali_info.cache_flow_rate_calibration_type = static_cast<FlowRatioCalibrationType>(calis_j["cache_flow_rate_calibration_type"].get<int>());
+                    if (calis_j.contains("presets")) {
+                        cali_info.selected_presets.clear();
+                        for (auto cali_it = calis_j["presets"].begin(); cali_it != calis_j["presets"].end(); cali_it++) {
+                            CaliPresetInfo preset_info;
+                            preset_info.tray_id     = cali_it.value()["tray_id"].get<int>();
+                            preset_info.nozzle_diameter = cali_it.value()["nozzle_diameter"].get<float>();
+                            preset_info.filament_id     = cali_it.value()["filament_id"].get<std::string>();
+                            preset_info.setting_id      = cali_it.value()["setting_id"].get<std::string>();
+                            preset_info.name            = cali_it.value()["name"].get<std::string>();
+                            if (cali_it.value().contains("extruder_id"))
+                                preset_info.extruder_id = cali_it.value()["extruder_id"].get<int>();
+                            if (cali_it.value().contains("nozzle_volume_type"))
+                                preset_info.nozzle_volume_type  = NozzleVolumeType(cali_it.value()["nozzle_volume_type"].get<int>());
+                            if (cali_it.value().contains("bed_type"))
+                                preset_info.bed_type = BedType(cali_it.value()["bed_type"].get<int>());
+                            cali_info.selected_presets.push_back(preset_info);
+                        }
+                    }
+                    m_printer_cali_infos.emplace_back(cali_info);
+                }
+            } else if (it.key() == "orca_presets") {
+                for (auto& j_model : it.value()) {
+                    m_printer_settings[j_model["machine"].get<std::string>()] = j_model;
+                }
+            } else if (it.key() == "local_machines") {
+                for (auto m = it.value().begin(); m != it.value().end(); ++m) {
+                    const auto&    p = m.value();
+                    BBLocalMachine local_machine;
+                    local_machine.dev_id = m.key();
+                    if (p.contains("dev_name"))
+                        local_machine.dev_name = p["dev_name"].get<std::string>();
+                    if (p.contains("dev_ip"))
+                        local_machine.dev_ip = p["dev_ip"].get<std::string>();
+                    if (p.contains("printer_type"))
+                        local_machine.printer_type = p["printer_type"].get<std::string>();
+                    m_local_machines[local_machine.dev_id] = local_machine;
+                }
             } else {
                 if (it.value().is_object()) {
                     for (auto iter = it.value().begin(); iter != it.value().end(); iter++) {
@@ -497,12 +749,15 @@ std::string AppConfig::load()
                             m_filament_presets = iter.value().get<std::vector<std::string>>();
                         } else if (iter.key() == "filament_colors") {
                             m_filament_colors = iter.value().get<std::vector<std::string>>();
-                        }
-                        else {
+                        } else if(iter.key() == "filament_multi_colors") {
+                           m_filament_multi_colors = iter.value().get<std::vector<std::string>>();
+                        } else if(iter.key() == "filament_color_types") {
+                           m_filament_color_types = iter.value().get<std::vector<std::string>>();
+                        } else {
                             if (iter.value().is_string())
                                 m_storage[it.key()][iter.key()] = iter.value().get<std::string>();
                             else {
-                                BOOST_LOG_TRIVIAL(trace) << "load config warning...";
+                                BOOST_LOG_TRIVIAL(warning) << "load config warning...";
                             }
                         }
                     }
@@ -546,14 +801,8 @@ std::string AppConfig::load()
 
 void AppConfig::save()
 {
-    {
-        // Returns "undefined" if the thread naming functionality is not supported by the operating system.
-        std::optional<std::string> current_thread_name = get_current_thread_name();
-        if (current_thread_name && *current_thread_name != "bambustu_main" && *current_thread_name != "main") {
-            BOOST_LOG_TRIVIAL(error) << __FUNCTION__<<", current_thread_name is " << *current_thread_name;
-            throw CriticalException("Calling AppConfig::save() from a worker thread, thread name: " + *current_thread_name);
-        }
-    }
+    if (! is_main_thread_active())
+        throw CriticalException("Calling AppConfig::save() from a worker thread!");
 
     // The config is first written to a file with a PID suffix and then moved
     // to avoid race conditions with multiple instances of Slic3r
@@ -588,6 +837,34 @@ void AppConfig::save()
     for (const auto &filament_color : m_filament_colors) {
         j["app"]["filament_colors"].push_back(filament_color);
     }
+    for (const auto &filament_multi_color : m_filament_multi_colors) {
+       j["app"]["filament_multi_colors"].push_back(filament_multi_color);
+    }
+
+    for (const auto &filament_color_type : m_filament_color_types) {
+       j["app"]["filament_color_types"].push_back(filament_color_type);
+    }
+
+    for (const auto &cali_info : m_printer_cali_infos) {
+        json cali_json;
+        cali_json["dev_id"]             = cali_info.dev_id;
+        cali_json["flow_ratio"]         = cali_info.cache_flow_ratio;
+        cali_json["cali_finished"]      = cali_info.cali_finished ? 1 : 0;
+        cali_json["cache_flow_rate_calibration_type"] = static_cast<int>(cali_info.cache_flow_rate_calibration_type);
+        for (auto filament_preset : cali_info.selected_presets) {
+            json preset_json;
+            preset_json["tray_id"] = filament_preset.tray_id;
+            preset_json["extruder_id"]      = filament_preset.extruder_id;
+            preset_json["nozzle_volume_type"]  = int(filament_preset.nozzle_volume_type);
+            preset_json["bed_type"] = int(filament_preset.bed_type);
+            preset_json["nozzle_diameter"]  = filament_preset.nozzle_diameter;
+            preset_json["filament_id"]      = filament_preset.filament_id;
+            preset_json["setting_id"]       = filament_preset.setting_id;
+            preset_json["name"]             = filament_preset.name;
+            cali_json["presets"].push_back(preset_json);
+        }
+        j["calis"].push_back(cali_json);
+    }
 
     // Write the other categories.
     for (const auto& category : m_storage) {
@@ -603,7 +880,7 @@ void AppConfig::save()
         } else if (category.first == "presets") {
             json j_filament_array;
             for(const auto& kvp : category.second) {
-                if (boost::starts_with(kvp.first, "filament") && kvp.first != "filament_colors") {
+                if (boost::starts_with(kvp.first, "filament") && kvp.first != "filament_colors" && kvp.first != "filament_multi_colors" && kvp.first != "filament_color_types") {
                     j_filament_array.push_back(kvp.second);
                 } else {
                     j[category.first][kvp.first] = kvp.second;
@@ -644,6 +921,18 @@ void AppConfig::save()
         }
     }
 
+    // write machine settings
+    for (const auto& preset : m_printer_settings) {
+        j["orca_presets"].push_back(preset.second);
+    }
+    for (const auto& local_machine : m_local_machines) {
+        json m_json;
+        m_json["dev_name"]         = local_machine.second.dev_name;
+        m_json["dev_ip"]           = local_machine.second.dev_ip;
+        m_json["printer_type"]     = local_machine.second.printer_type;
+
+        j["local_machines"][local_machine.first] = m_json;
+    }
     boost::nowide::ofstream c;
     c.open(path_pid, std::ios::out | std::ios::trunc);
     c << std::setw(4) << j << std::endl;
@@ -652,10 +941,14 @@ void AppConfig::save()
     // WIN32 specific: The final "rename_file()" call is not safe in case of an application crash, there is no atomic "rename file" API
     // provided by Windows (sic!). Therefore we save a MD5 checksum to be able to verify file corruption. In addition,
     // we save the config file into a backup first before moving it to the final destination.
-    c << appconfig_md5_hash_line({j.dump(4)});
+    c << appconfig_md5_hash_line(j.dump(4));
 #endif
 
     c.close();
+    if (c.fail()) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to write new configuration to " << path_pid << "; aborting attempt to overwrite original configuration";
+      return;
+    }
 
 #ifdef WIN32
     // Make a backup of the configuration file before copying it to the final destination.
@@ -808,12 +1101,8 @@ std::string AppConfig::load()
 
 void AppConfig::save()
 {
-    {
-        // Returns "undefined" if the thread naming functionality is not supported by the operating system.
-        std::optional<std::string> current_thread_name = get_current_thread_name();
-        if (current_thread_name && *current_thread_name != "bambustu_main")
-            throw CriticalException("Calling AppConfig::save() from a worker thread!");
-    }
+    if (! is_main_thread_active())
+        throw CriticalException("Calling AppConfig::save() from a worker thread!");
 
     // The config is first written to a file with a PID suffix and then moved
     // to avoid race conditions with multiple instances of Slic3r
@@ -865,6 +1154,10 @@ void AppConfig::save()
     c << appconfig_md5_hash_line(config_str);
 #endif
     c.close();
+    if (c.fail()) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to write new configuration to " << path_pid << "; aborting attempt to overwrite original configuration";
+      return;
+    }
 
 #ifdef WIN32
     // Make a backup of the configuration file before copying it to the final destination.
@@ -915,6 +1208,25 @@ void AppConfig::set_vendors(const AppConfig &from)
     m_dirty = true;
 }
 
+void AppConfig::save_printer_cali_infos(const PrinterCaliInfo &cali_info, bool need_change_status)
+{
+    auto iter = std::find_if(m_printer_cali_infos.begin(), m_printer_cali_infos.end(), [&cali_info](const PrinterCaliInfo &cali_info_item) {
+        return cali_info_item.dev_id == cali_info.dev_id;
+    });
+
+    if (iter == m_printer_cali_infos.end()) {
+        m_printer_cali_infos.emplace_back(cali_info);
+    } else {
+        if (need_change_status) {
+            (*iter).cali_finished = cali_info.cali_finished;
+        }
+        (*iter).cache_flow_ratio = cali_info.cache_flow_ratio;
+        (*iter).selected_presets = cali_info.selected_presets;
+        (*iter).cache_flow_rate_calibration_type = cali_info.cache_flow_rate_calibration_type;
+    }
+    m_dirty = true;
+}
+
 std::string AppConfig::get_last_dir() const
 {
     const auto it = m_storage.find("recent");
@@ -957,13 +1269,14 @@ void AppConfig::set_recent_projects(const std::vector<std::string>& recent_proje
     for (unsigned int i = 0; i < (unsigned int)recent_projects.size(); ++i)
     {
         auto n = std::to_string(i + 1);
-        if (n.length() == 1) n = "0" + n;
+        if (n.length() == 1) n = "00" + n;
+        else if (n.length() == 2) n = "0" + n;
         it->second[n] = recent_projects[i];
     }
 }
 
 void AppConfig::set_mouse_device(const std::string& name, double translation_speed, double translation_deadzone,
-                                 float rotation_speed, float rotation_deadzone, double zoom_speed, bool swap_yz)
+                                 float rotation_speed, float rotation_deadzone, double zoom_speed, bool swap_yz, bool invert_x, bool invert_y, bool invert_z, bool invert_yaw, bool invert_pitch, bool invert_roll)
 {
     std::string key = std::string("mouse_device:") + name;
     auto it = m_storage.find(key);
@@ -977,6 +1290,12 @@ void AppConfig::set_mouse_device(const std::string& name, double translation_spe
     it->second["rotation_deadzone"] = float_to_string_decimal_point(rotation_deadzone);
     it->second["zoom_speed"] = float_to_string_decimal_point(zoom_speed);
     it->second["swap_yz"] = swap_yz ? "1" : "0";
+    it->second["invert_x"] = invert_x ? "1" : "0";
+    it->second["invert_y"] = invert_y ? "1" : "0";
+    it->second["invert_z"] = invert_z ? "1" : "0";
+    it->second["invert_yaw"] = invert_yaw ? "1" : "0";
+    it->second["invert_pitch"] = invert_pitch ? "1" : "0";
+    it->second["invert_roll"] = invert_roll ? "1" : "0";
 }
 
 std::vector<std::string> AppConfig::get_mouse_device_names() const
@@ -1107,6 +1426,140 @@ bool AppConfig::is_engineering_region(){
     return false;
 }
 
+void AppConfig::save_custom_color_to_config(const std::vector<std::string> &colors)
+{
+    auto set_colors = [](std::map<std::string, std::string> &data, const std::vector<std::string> &colors) {
+        for (size_t i = 0; i < colors.size(); i++) {
+            data[std::to_string(10 + i)] = colors[i]; // for map sort:10 begin
+        }
+    };
+    if (colors.size() > 0) {
+        if (!has_section("custom_color_list")) {
+            std::map<std::string, std::string> data;
+            set_colors(data, colors);
+            set_section("custom_color_list", data);
+        } else {
+            auto data        = get_section("custom_color_list");
+            auto data_modify = const_cast<std::map<std::string, std::string> *>(&data);
+            set_colors(*data_modify, colors);
+            set_section("custom_color_list", *data_modify);
+        }
+    }
+}
+
+std::vector<std::string> AppConfig::get_custom_color_from_config()
+{
+    std::vector<std::string> colors;
+    if (has_section("custom_color_list")) {
+        auto data = get_section("custom_color_list");
+        for (auto iter : data) {
+            colors.push_back(iter.second);
+        }
+    }
+    return colors;
+}
+
+void AppConfig::save_nozzle_volume_types_to_config(const std::string& printer_name, const std::string& nozzle_volume_types)
+{
+    if (!has_section("nozzle_volume_types")) {
+        std::map<std::string, std::string> data;
+        data[printer_name] = nozzle_volume_types;
+        set_section("nozzle_volume_types", data);
+    } else {
+        auto data        = get_section("nozzle_volume_types");
+        auto data_modify = const_cast<std::map<std::string, std::string>&>(data);
+        data_modify[printer_name] = nozzle_volume_types;
+        set_section("nozzle_volume_types", data_modify);
+    }
+}
+
+std::string AppConfig::get_nozzle_volume_types_from_config(const std::string& printer_name)
+{
+    std::string nozzle_volume_types;
+    if (has_section("nozzle_volume_types")) {
+        auto data        = get_section("nozzle_volume_types");
+        if (data.find(printer_name) != data.end())
+            nozzle_volume_types = data[printer_name];
+    }
+
+    return nozzle_volume_types;
+}
+
+std::string AppConfig::get_network_plugin_version() const
+{
+    return get(SETTING_NETWORK_PLUGIN_VERSION);
+}
+
+void AppConfig::set_network_plugin_version(const std::string& version)
+{
+    set(SETTING_NETWORK_PLUGIN_VERSION, version);
+}
+
+std::vector<std::string> AppConfig::get_skipped_network_versions() const
+{
+    std::vector<std::string> result;
+    std::string skipped = get(SETTING_NETWORK_PLUGIN_SKIPPED_VERSIONS);
+    if (skipped.empty())
+        return result;
+
+    std::stringstream ss(skipped);
+    std::string version;
+    while (std::getline(ss, version, ';')) {
+        if (!version.empty())
+            result.push_back(version);
+    }
+    return result;
+}
+
+void AppConfig::add_skipped_network_version(const std::string& version)
+{
+    auto skipped = get_skipped_network_versions();
+    if (std::find(skipped.begin(), skipped.end(), version) == skipped.end()) {
+        skipped.push_back(version);
+        std::string joined;
+        for (size_t i = 0; i < skipped.size(); ++i) {
+            if (i > 0) joined += ";";
+            joined += skipped[i];
+        }
+        set(SETTING_NETWORK_PLUGIN_SKIPPED_VERSIONS, joined);
+    }
+}
+
+bool AppConfig::is_network_version_skipped(const std::string& version) const
+{
+    auto skipped = get_skipped_network_versions();
+    return std::find(skipped.begin(), skipped.end(), version) != skipped.end();
+}
+
+void AppConfig::clear_skipped_network_versions()
+{
+    set(SETTING_NETWORK_PLUGIN_SKIPPED_VERSIONS, "");
+}
+
+bool AppConfig::is_network_update_prompt_disabled() const
+{
+    return get_bool(SETTING_NETWORK_PLUGIN_UPDATE_DISABLED);
+}
+
+void AppConfig::set_network_update_prompt_disabled(bool disabled)
+{
+    set_bool(SETTING_NETWORK_PLUGIN_UPDATE_DISABLED, disabled);
+}
+
+bool AppConfig::should_remind_network_update_later() const
+{
+    return get_bool(SETTING_NETWORK_PLUGIN_REMIND_LATER);
+}
+
+void AppConfig::set_remind_network_update_later(bool remind)
+{
+    set_bool(SETTING_NETWORK_PLUGIN_REMIND_LATER, remind);
+}
+
+void AppConfig::clear_remind_network_update_later()
+{
+    set_bool(SETTING_NETWORK_PLUGIN_REMIND_LATER, false);
+}
 
 void AppConfig::reset_selections()
 {
@@ -1141,6 +1594,11 @@ std::string AppConfig::version_check_url() const
 {
     auto from_settings = get("version_check_url");
     return from_settings.empty() ? VERSION_CHECK_URL : from_settings;
+}
+
+std::string AppConfig::profile_update_url() const
+{
+    return PROFILE_UPDATE_URL;
 }
 
 bool AppConfig::exists()

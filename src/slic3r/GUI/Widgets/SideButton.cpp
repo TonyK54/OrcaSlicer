@@ -1,9 +1,10 @@
 #include "SideButton.hpp"
 #include "Label.hpp"
 
+#include <wx/dcclient.h>
 #include <wx/dcgraph.h>
 
-BEGIN_EVENT_TABLE(SideButton, wxPanel)
+BEGIN_EVENT_TABLE(SideButton, wxWindow)
 EVT_LEFT_DOWN(SideButton::mouseDown)
 EVT_LEFT_UP(SideButton::mouseReleased)
 EVT_PAINT(SideButton::paintEvent)
@@ -21,16 +22,15 @@ SideButton::SideButton(wxWindow* parent, wxString text, wxString icon, long stly
     extra_size = wxSize(38, 10);
     text_margin = 15;
 #endif
-    
+
     icon_offset = 0;
     text_orientation = HO_Left;
-    
-
 
     border_color.append(0x6B6B6B, StateColor::Disabled);
     border_color.append(wxColour(0, 137, 123), StateColor::Pressed);
     border_color.append(wxColour(38, 166, 154), StateColor::Hovered);
     border_color.append(0x009688, StateColor::Normal);
+    border_color.setTakeFocusedAsHovered(false);
 
     text_color.append(0xACACAC, StateColor::Disabled);
     text_color.append(0xFEFEFE, StateColor::Pressed);
@@ -41,6 +41,7 @@ SideButton::SideButton(wxWindow* parent, wxString text, wxString icon, long stly
     background_color.append(wxColour(0, 137, 123), StateColor::Pressed);
     background_color.append(wxColour(38, 166, 154), StateColor::Hovered);
     background_color.append(0x009688, StateColor::Normal);
+    background_color.setTakeFocusedAsHovered(false);
 
     SetBottomColour(wxColour("#3B4446"));
 
@@ -205,7 +206,7 @@ void SideButton::dorender(wxDC& dc, wxDC& text_dc)
     dc.SetPen(wxPen(border_color.colorForStates(states)));
     int pen_width = dc.GetPen().GetWidth();
 
-    
+
     // draw icon style
     if (icon.bmp().IsOk()) {
         if (radius > 1e-5) {
@@ -277,7 +278,9 @@ void SideButton::dorender(wxDC& dc, wxDC& text_dc)
     auto text = GetLabel();
     if (!text.IsEmpty()) {
         pt.y += (rcContent.height - textSize.y) / 2;
-
+#ifdef __APPLE__
+        pt.y -= FromDIP(2);
+#endif
         text_dc.SetFont(GetFont());
         text_dc.SetTextForeground(text_color.colorForStates(states));
         text_dc.DrawText(text, pt);

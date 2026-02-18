@@ -27,8 +27,10 @@ public:
 
     bool selected{ false };
     float percent;
-    GLTexture image_texture;
-    GLTexture image_texture_transparent;
+    GLTexture image_stats;
+    GLTexture image_slicing;
+    GLTexture image_idle;
+    GLTexture image_failed;
     SliceState slice_state;
 
     ImTextureID texture_id { 0 };
@@ -49,7 +51,7 @@ public:
     float icon_height;
     bool is_display_scrollbar;
     bool show_stats_item{ false };
-
+    bool is_render_finish{false};
     IMToolbar() {
         icon_width = DEFAULT_TOOLBAR_BUTTON_WIDTH;
         icon_height = DEFAULT_TOOLBAR_BUTTON_HEIGHT;
@@ -63,7 +65,7 @@ public:
     float fontScale;
 
     bool is_enabled() const { return m_enabled; }
-    void set_enabled(bool enable) { m_enabled = enable; }
+    void set_enabled(bool enable);
 
     void set_icon_size(float width, float height) {
         icon_width = width;

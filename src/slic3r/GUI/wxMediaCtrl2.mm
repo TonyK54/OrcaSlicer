@@ -1,6 +1,6 @@
 //
 //  wxMediaCtrl2.m
-//  BambuStudio
+//  OrcaSlicer
 //
 //  Created by cmguo on 2021/12/7.
 //
@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <dlfcn.h>
 
+wxDEFINE_EVENT(EVT_MEDIA_CTRL_STAT, wxCommandEvent);
+
 #define BAMBU_DYNAMIC
 
 void wxMediaCtrl2::bambu_log(void const * ctx, int level, char const * msg)
@@ -30,6 +32,12 @@ void wxMediaCtrl2::bambu_log(void const * ctx, int level, char const * msg)
                 if (msg2.SubString(n + 1, msg2.Length() - 2).ToLong(&val))
                     ctrl->m_error = (int) val;
             }
+        } else if (strstr(msg, "stat_log")) {
+            wxMediaCtrl2 * ctrl = (wxMediaCtrl2 *) ctx;
+            wxCommandEvent evt(EVT_MEDIA_CTRL_STAT);
+            evt.SetEventObject(ctrl);
+            evt.SetString(strchr(msg, ' ') + 1);
+            wxPostEvent(ctrl, evt);
         }
     } else if (level < 0) {
         wxMediaCtrl2 * ctrl = (wxMediaCtrl2 *) ctx;
@@ -89,8 +97,8 @@ void wxMediaCtrl2::Load(wxURI url)
     BambuPlayer * player = (BambuPlayer *) m_player;
     if (player) {
         [player close];
-        [player open: url.BuildURI().ToUTF8()];
         m_error = 0;
+        m_error = [player open: url.BuildURI().ToUTF8()];
     }
     wxMediaEvent event(wxEVT_MEDIA_STATECHANGED);
     event.SetId(GetId());
@@ -153,6 +161,8 @@ wxSize wxMediaCtrl2::GetVideoSize() const
     BambuPlayer * player2 = (BambuPlayer *) m_player;
     if (player2) {
         NSSize size = [player2 videoSize];
+        if (size.width > 0)
+            const_cast<wxSize&>(m_video_size) = {(int) size.width, (int) size.height};
         return {(int) size.width, (int) size.height};
     } else {
         return {0, 0};

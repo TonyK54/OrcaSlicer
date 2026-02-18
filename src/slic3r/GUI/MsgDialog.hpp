@@ -14,8 +14,10 @@
 #include "Widgets/Button.hpp"
 #include "Widgets/CheckBox.hpp"
 #include "Widgets/TextInput.hpp"
+#include "Widgets/HyperLink.hpp"
 #include "BBLStatusBar.hpp"
 #include "BBLStatusBarSend.hpp"
+#include "libslic3r/Semver.hpp"
 
 class wxBoxSizer;
 class wxCheckBox;
@@ -61,7 +63,7 @@ struct MsgDialog : DPIDialog
 	MsgDialog &operator=(const MsgDialog &) = delete;
 	virtual ~MsgDialog();
 
-	void show_dsa_button();
+	void show_dsa_button(wxString const & title = {});
 	bool get_checkbox_state();
 	virtual void on_dpi_changed(const wxRect& suggested_rect);
 	void SetButtonLabel(wxWindowID btn_id, const wxString& label, bool set_focus = false);
@@ -77,7 +79,7 @@ protected:
 		VERT_SPACING = 15,//TO
 	};
 
-	MsgDialog(wxWindow *parent, const wxString &title, const wxString &headline, long style = wxOK, wxBitmap bitmap = wxNullBitmap);
+	MsgDialog(wxWindow *parent, const wxString &title, const wxString &headline, long style = wxOK, wxBitmap bitmap = wxNullBitmap, const wxString &forward_str = "");
 	// returns pointer to created button
 	Button* add_button(wxWindowID btn_id, bool set_focus = false, const wxString& label = wxString());
 	// returns pointer to found button or NULL
@@ -92,6 +94,7 @@ protected:
 	wxStaticBitmap *logo;
     MsgButtonsHash  m_buttons;
 	CheckBox* m_checkbox_dsa{nullptr};
+    wxString  m_forward_str;
 };
 
 
@@ -101,7 +104,7 @@ class ErrorDialog : public MsgDialog
 public:
 	// If monospaced_font is true, the error message is displayed using html <code><pre></pre></code> tags,
 	// so that the code formatting will be preserved. This is useful for reporting errors from the placeholder parser.
-	ErrorDialog(wxWindow *parent, const wxString &msg, bool courier_font);
+	ErrorDialog(wxWindow *parent, const wxString &temp_msg, bool courier_font);
 	ErrorDialog(ErrorDialog &&) = delete;
 	ErrorDialog(const ErrorDialog &) = delete;
 	ErrorDialog &operator=(ErrorDialog &&) = delete;
@@ -128,6 +131,8 @@ public:
 	virtual ~WarningDialog() = default;
 };
 
+wxString get_wraped_wxString(const wxString& text_in, size_t line_len = 80);
+
 #if 1
 // Generic static line, used intead of wxStaticLine
 //class StaticLine: public wxTextCtrl
@@ -151,10 +156,13 @@ class MessageDialog : public MsgDialog
 {
 public:
 	// NOTE! Don't change a signature of contsrucor. It have to  be tha same as for wxMessageDialog
-	MessageDialog(	wxWindow *parent,
-		            const wxString& message,
-		            const wxString& caption = wxEmptyString,
-		            long style = wxOK);
+    MessageDialog(wxWindow       *parent,
+                  const wxString &message,
+                  const wxString &caption     = wxEmptyString,
+                  long            style       = wxOK,
+                  const wxString &forward_str = "",
+                  const wxString &link_text   = "",
+                  std::function<void(const wxString &)> link_callback = nullptr);
 	MessageDialog(MessageDialog&&) = delete;
 	MessageDialog(const MessageDialog&) = delete;
 	MessageDialog &operator=(MessageDialog&&) = delete;
@@ -190,7 +198,7 @@ public:
 	}
 
 	wxString	GetCheckBoxText()	const { return m_checkBoxText; }
-	bool		IsCheckBoxChecked() const { return m_checkBoxValue; }
+	bool		IsCheckBoxChecked() const;
 
 // This part o fcode isported from the "wx\msgdlg.h"
 	using wxMD = wxMessageDialogBase;
@@ -372,6 +380,59 @@ private:
     wxString msg;
 };
 
+class DeleteConfirmDialog : public DPIDialog
+{
+public:
+    DeleteConfirmDialog(wxWindow *parent, const wxString &title, const wxString &msg);
+    ~DeleteConfirmDialog();
+    virtual void on_dpi_changed(const wxRect &suggested_rect);
+
+private:
+    wxString      msg;
+    Button *      m_del_btn    = nullptr;
+    Button *      m_cancel_btn = nullptr;
+    wxStaticText *m_msg_text   = nullptr;
+};
+
+class Newer3mfVersionDialog : public DPIDialog
+{
+public:
+    Newer3mfVersionDialog(wxWindow *parent, const Semver* file_version, const Semver* cloud_version, wxString new_keys);
+    ~Newer3mfVersionDialog(){};
+    virtual void on_dpi_changed(const wxRect &suggested_rect){};
+
+private:
+    wxBoxSizer *get_msg_sizer();
+    wxBoxSizer *get_btn_sizer();
+
+
+private:
+    const Semver *m_file_version;
+    const Semver *m_cloud_version;
+    wxString      m_new_keys;
+    Button *      m_update_btn = nullptr;
+    Button *      m_later_btn  = nullptr;
+    wxStaticText *m_msg_text   = nullptr;
+};
+
+
+class NetworkErrorDialog : public DPIDialog
+{
+public:
+    NetworkErrorDialog(wxWindow* parent);
+    ~NetworkErrorDialog() {};
+    virtual void on_dpi_changed(const wxRect& suggested_rect) {};
+
+private:
+    Label* m_text_basic;
+    HyperLink* m_link_server_state; // ORCA
+    Label* m_text_proposal;
+    HyperLink* m_text_wiki; // ORCA
+    Button *         m_button_confirm;
+
+public:
+    bool m_show_again{false};
+};
 
 }
 }

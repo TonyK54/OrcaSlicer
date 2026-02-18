@@ -16,12 +16,26 @@
 #include <wx/glcanvas.h>
 #include <wx/msgdlg.h>
 
+#include "GUI_Init.hpp"
+
 #ifdef __APPLE__
 // Part of hack to remove crash when closing the application on OSX 10.9.5 when building against newer wxWidgets
 #include <wx/platinfo.h>
 
 #include "../Utils/MacDarkMode.hpp"
 #endif // __APPLE__
+
+// Verify GLEW and wxWidgets use the same OpenGL backend (EGL vs GLX).
+// A mismatch causes rendering failures: GLEW's function loading must match
+// the context type created by wxWidgets.
+#if defined(__linux__)
+    #if defined(GLEW_EGL) && (!defined(wxUSE_GLCANVAS_EGL) || !wxUSE_GLCANVAS_EGL)
+        #error "OpenGL backend mismatch: GLEW has EGL support enabled but wxWidgets does not. Ensure GLEW_USE_EGL and wxUSE_GLCANVAS_EGL are both ON or both OFF."
+    #endif
+    #if !defined(GLEW_EGL) && defined(wxUSE_GLCANVAS_EGL) && wxUSE_GLCANVAS_EGL
+        #error "OpenGL backend mismatch: wxWidgets has EGL support enabled but GLEW does not. Ensure GLEW_USE_EGL and wxUSE_GLCANVAS_EGL are both ON or both OFF."
+    #endif
+#endif
 
 namespace Slic3r {
 namespace GUI {
@@ -65,6 +79,11 @@ const std::string& OpenGLManager::GLInfo::get_renderer() const
     return m_renderer;
 }
 
+bool OpenGLManager::GLInfo::is_mesa() const
+{
+    return boost::icontains(m_version, "mesa");
+}
+
 int OpenGLManager::GLInfo::get_max_tex_size() const
 {
     if (!m_detected)
@@ -95,7 +114,7 @@ void OpenGLManager::GLInfo::detect() const
     *const_cast<std::string*>(&m_vendor) = gl_get_string_safe(GL_VENDOR, "N/A");
     *const_cast<std::string*>(&m_renderer) = gl_get_string_safe(GL_RENDERER, "N/A");
 
-    BOOST_LOG_TRIVIAL(info) << boost::format("got opengl version %1%, glsl version %2%, vendor %3%")%m_version %m_glsl_version %m_vendor<< std::endl;
+    BOOST_LOG_TRIVIAL(info) << boost::format("got opengl version %1%, glsl version %2%, vendor %3% , graphics card model %4%") % m_version % m_glsl_version % m_vendor % m_renderer << std::endl;
 
     int* max_tex_size = const_cast<int*>(&m_max_tex_size);
     glsafe(::glGetIntegerv(GL_MAX_TEXTURE_SIZE, max_tex_size));
@@ -109,6 +128,10 @@ void OpenGLManager::GLInfo::detect() const
         float* max_anisotropy = const_cast<float*>(&m_max_anisotropy);
         glsafe(::glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, max_anisotropy));
     }
+
+    if (!GLEW_ARB_compatibility)
+        *const_cast<bool*>(&m_core_profile) = true;
+
     *const_cast<bool*>(&m_detected) = true;
 }
 
@@ -177,6 +200,9 @@ std::string OpenGLManager::GLInfo::to_string(bool for_github) const
 
     out << h2_start << "OpenGL installation" << h2_end << line_end;
     out << b_start << "GL version:   " << b_end << m_version << line_end;
+#if !SLIC3R_OPENGL_ES
+    out << b_start << "Profile:      " << b_end << (is_core_profile() ? "Core" : "Compatibility") << line_end;
+#endif // !SLIC3R_OPENGL_ES
     out << b_start << "Vendor:       " << b_end << m_vendor << line_end;
     out << b_start << "Renderer:     " << b_end << m_renderer << line_end;
     out << b_start << "GLSL version: " << b_end << m_glsl_version << line_end;
@@ -207,7 +233,7 @@ std::string OpenGLManager::GLInfo::to_string(bool for_github) const
 
 OpenGLManager::GLInfo OpenGLManager::s_gl_info;
 bool OpenGLManager::s_compressed_textures_supported = false;
-bool OpenGLManager::m_use_manually_generated_mipmaps = true;
+bool OpenGLManager::s_force_power_of_two_textures = false;
 OpenGLManager::EMultisampleState OpenGLManager::s_multisample = OpenGLManager::EMultisampleState::Unknown;
 OpenGLManager::EFramebufferType OpenGLManager::s_framebuffers_type = OpenGLManager::EFramebufferType::Unknown;
 
@@ -233,12 +259,13 @@ OpenGLManager::~OpenGLManager()
 #endif //__APPLE__
 }
 
-bool OpenGLManager::init_gl()
+bool OpenGLManager::init_gl(bool popup_error)
 {
     if (!m_gl_initialized) {
+        glewExperimental = true;
         GLenum result = glewInit();
         if (result != GLEW_OK) {
-            BOOST_LOG_TRIVIAL(error) << "Unable to init glew library";
+            BOOST_LOG_TRIVIAL(error) << "Unable to init glew library, Error: " << glewGetErrorString(result);
             return false;
         }
 	//BOOST_LOG_TRIVIAL(info) << "glewInit Success."<< std::endl;
@@ -251,69 +278,139 @@ bool OpenGLManager::init_gl()
         if (GLEW_ARB_framebuffer_object) {
             s_framebuffers_type = EFramebufferType::Arb;
             BOOST_LOG_TRIVIAL(info) << "Found Framebuffer Type ARB."<< std::endl;
-	}
-        else if (GLEW_EXT_framebuffer_object)
+        }
+        else if (GLEW_EXT_framebuffer_object) {
+            BOOST_LOG_TRIVIAL(info) << "Found Framebuffer Type Ext."<< std::endl;
             s_framebuffers_type = EFramebufferType::Ext;
-        else
+        }
+        else {
             s_framebuffers_type = EFramebufferType::Unknown;
+            BOOST_LOG_TRIVIAL(warning) << "Found Framebuffer Type unknown!"<< std::endl;
+        }
 
         bool valid_version = s_gl_info.is_version_greater_or_equal_to(2, 0);
         if (!valid_version) {
+            BOOST_LOG_TRIVIAL(error) << "Found opengl version <= 3.2"<< std::endl;
             // Complain about the OpenGL version.
-            wxString message = from_u8((boost::format(
-                _utf8(L("The application cannot run normally because OpenGL version is lower than 2.0.\n")))).str());
-            message += "\n";
-        	message += _L("Please upgrade your graphics card driver.");
-        	wxMessageBox(message, _L("Unsupported OpenGL version"), wxOK | wxICON_ERROR);
+            if (popup_error) {
+                wxString message = from_u8((boost::format(
+                    _utf8(L("The application cannot run normally because OpenGL version is lower than 3.2.\n")))).str());
+                message += "\n";
+                message += _L("Please upgrade your graphics card driver.");
+                wxMessageBox(message, _L("Unsupported OpenGL version"), wxOK | wxICON_ERROR);
+            }
         }
 
         if (valid_version)
-	{
+        {
             // load shaders
             auto [result, error] = m_shaders_manager.init();
             if (!result) {
-                wxString message = from_u8((boost::format(
-                    _utf8(L("Unable to load shaders:\n%s"))) % error).str());
-                wxMessageBox(message, _L("Error loading shaders"), wxOK | wxICON_ERROR);
+                BOOST_LOG_TRIVIAL(error) << "Unable to load shaders: "<<error<< std::endl;
+                if (popup_error) {
+                    wxString message = from_u8((boost::format(
+                        _utf8(L("Unable to load shaders:\n%s"))) % error).str());
+                    wxMessageBox(message, _L("Error loading shaders"), wxOK | wxICON_ERROR);
+                }
             }
         }
 
 #ifdef _WIN32
         // Since AMD driver version 22.7.1, there is probably some bug in the driver that causes the issue with the missing
-        // texture of the bed. It seems that this issue only triggers when mipmaps are generated manually
-        // (combined with a texture compression) and when mipmaps are generated through OpenGL glGenerateMipmap is working.
-        // So, for newer drivers than 22.6.1, the last working driver version, we use mipmaps generated through OpenGL.
-        if (const auto gl_info = OpenGLManager::get_gl_info(); boost::contains(gl_info.get_vendor(), "ATI Technologies Inc.")) {
-            // WHQL drivers seem to have one more version number at the end besides non-WHQL drivers.
-            //     WHQL: 4.6.14800 Compatibility Profile Context 22.6.1 30.0.21023.1015
-            // Non-WHQL: 4.6.0 Compatibility Profile Context 22.8.1.220810
-            std::regex version_rgx(R"(Compatibility\sProfile\sContext\s(\d+)\.(\d+)\.(\d+))");
-            if (std::smatch matches; std::regex_search(gl_info.get_version(), matches, version_rgx) && matches.size() == 4) {
-                int version_major = std::stoi(matches[1].str());
-                int version_minor = std::stoi(matches[2].str());
-                int version_patch = std::stoi(matches[3].str());
-                BOOST_LOG_TRIVIAL(debug) << "Found AMD driver version: " << version_major << "." << version_minor << "." << version_patch;
-
-                if (version_major > 22 || (version_major == 22 && version_minor > 6) || (version_major == 22 && version_minor == 6 && version_patch > 1)) {
-                    m_use_manually_generated_mipmaps = false;
-                    BOOST_LOG_TRIVIAL(debug) << "Mipmapping through OpenGL was enabled.";
-                }
-            } else {
-                BOOST_LOG_TRIVIAL(error) << "Not recognized format of version.";
-            }
-        } else {
-            BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << "not AMD driver.";
-        }
-#endif
+        // texture of the bed (see: https://github.com/prusa3d/PrusaSlicer/issues/8417).
+        // It seems that this issue only triggers when mipmaps are generated manually
+        // (combined with a texture compression) with texture size not being power of two.
+        // When mipmaps are generated through OpenGL function glGenerateMipmap() the driver works fine,
+        // but the mipmap generation is quite slow on some machines.
+        // There is no an easy way to detect the driver version without using Win32 API because the strings returned by OpenGL
+        // have no standardized format, only some of them contain the driver version.
+        // Until we do not know that driver will be fixed (if ever) we force the use of power of two textures on all cards
+        // 1) containing the string 'Radeon' in the string returned by glGetString(GL_RENDERER)
+        // 2) containing the string 'Custom' in the string returned by glGetString(GL_RENDERER)
+        const auto& gl_info = OpenGLManager::get_gl_info();
+        if (boost::contains(gl_info.get_vendor(), "ATI Technologies Inc.") &&
+           (boost::contains(gl_info.get_renderer(), "Radeon") ||
+            boost::contains(gl_info.get_renderer(), "Custom")))
+            s_force_power_of_two_textures = true;
+#endif // _WIN32
     }
 
     return true;
 }
 
-wxGLContext* OpenGLManager::init_glcontext(wxGLCanvas& canvas)
+wxGLContext* OpenGLManager::init_glcontext(wxGLCanvas& canvas, const std::pair<int, int>& required_opengl_version, bool enable_compatibility_profile,
+    bool enable_debug)
 {
     if (m_context == nullptr) {
-        m_context = new wxGLContext(&canvas);
+        // m_debug_enabled = enable_debug;
+
+        const int gl_major = required_opengl_version.first;
+        const int gl_minor = required_opengl_version.second;
+        const bool supports_core_profile =
+            std::find(OpenGLVersions::core.begin(), OpenGLVersions::core.end(), std::make_pair(gl_major, gl_minor)) != OpenGLVersions::core.end();
+
+        if (gl_major == 0 && !enable_compatibility_profile) {
+            // search for highest supported core profile version
+            // disable wxWidgets logging to avoid showing the log dialog in case the following code fails generating a valid gl context
+            wxLogNull logNo;
+            for (auto v = OpenGLVersions::core.rbegin(); v != OpenGLVersions::core.rend(); ++v) {
+                wxGLContextAttrs attrs;
+                attrs.PlatformDefaults().MajorVersion(v->first).MinorVersion(v->second).CoreProfile().ForwardCompatible();
+                // if (m_debug_enabled)
+                //     attrs.DebugCtx();
+                attrs.EndList();
+                m_context = new wxGLContext(&canvas, nullptr, &attrs);
+                if (m_context->IsOK())
+                    break;
+                else {
+                    delete m_context;
+                    m_context = nullptr;
+                }
+            }
+        }
+
+        if (m_context == nullptr) {
+            // search for requested compatibility profile version
+            if (enable_compatibility_profile) {
+                // disable wxWidgets logging to avoid showing the log dialog in case the following code fails generating a valid gl context
+                wxLogNull logNo;
+                wxGLContextAttrs attrs;
+                attrs.PlatformDefaults().CompatibilityProfile();
+                // if (m_debug_enabled)
+                //     attrs.DebugCtx();
+                attrs.EndList();
+                m_context = new wxGLContext(&canvas, nullptr, &attrs);
+                if (!m_context->IsOK()) {
+                    delete m_context;
+                    m_context = nullptr;
+                }
+            }
+            // search for requested core profile version
+            else if (supports_core_profile) {
+                // disable wxWidgets logging to avoid showing the log dialog in case the following code fails generating a valid gl context
+                wxLogNull logNo;
+                wxGLContextAttrs attrs;
+                attrs.PlatformDefaults().MajorVersion(gl_major).MinorVersion(gl_minor).CoreProfile().ForwardCompatible();
+                // if (m_debug_enabled)
+                //     attrs.DebugCtx();
+                attrs.EndList();
+                m_context = new wxGLContext(&canvas, nullptr, &attrs);
+                if (!m_context->IsOK()) {
+                    delete m_context;
+                    m_context = nullptr;
+                }
+            }
+        }
+
+        if (m_context == nullptr) {
+            wxGLContextAttrs attrs;
+            attrs.PlatformDefaults();
+            // if (m_debug_enabled)
+            //     attrs.DebugCtx();
+            attrs.EndList();
+            // if no valid context was created use the default one
+            m_context = new wxGLContext(&canvas, nullptr, &attrs);
+        }
 
 #ifdef __APPLE__
         // Part of hack to remove crash when closing the application on OSX 10.9.5 when building against newer wxWidgets

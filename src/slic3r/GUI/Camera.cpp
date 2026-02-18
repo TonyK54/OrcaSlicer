@@ -20,6 +20,7 @@ double Camera::FrustrumMinZRange = 50.0;
 double Camera::FrustrumMinNearZ = 100.0;
 double Camera::FrustrumZMargin = 10.0;
 double Camera::MaxFovDeg = 60.0;
+double Camera::ZoomUnit = 0.1;
 
 std::string Camera::get_type_as_string() const
 {
@@ -36,9 +37,9 @@ void Camera::set_type(EType type)
 {
     if (m_type != type && (type == EType::Ortho || type == EType::Perspective)) {
         m_type = type;
+        m_prevent_auto_type = true;
         if (m_update_config_on_type_change_enabled) {
             wxGetApp().app_config->set_bool("use_perspective_camera", m_type == EType::Perspective);
-            wxGetApp().app_config->save();
         }
     }
 }
@@ -52,10 +53,35 @@ void Camera::select_next_type()
     set_type((EType)next);
 }
 
+void Camera::auto_type(EType preferred_type)
+{
+    if (wxApp::GetInstance() == nullptr || wxGetApp().app_config == nullptr)
+        return;
+    if (!wxGetApp().app_config->get_bool("auto_perspective"))
+        return;
+    if (preferred_type == EType::Perspective) {
+        if (!m_prevent_auto_type) {
+            set_type(preferred_type);
+            m_prevent_auto_type = false;
+        }
+    } else {
+        set_type(preferred_type);
+        m_prevent_auto_type = false;
+    }
+}
+
+void Camera::translate(const Vec3d& displacement) {
+    if (!displacement.isApprox(Vec3d::Zero())) {
+        m_view_matrix.translate(-displacement);
+        update_target(); 
+    }
+}
+
 void Camera::set_target(const Vec3d& target)
 {
     //BBS do not check validation
     //const Vec3d new_target = validate_target(target);
+    update_target();
     const Vec3d new_target = target;
     const Vec3d new_displacement = new_target - m_target;
     if (!new_displacement.isApprox(Vec3d::Zero())) {
@@ -77,24 +103,152 @@ void Camera::set_zoom(double zoom)
 
 void Camera::select_view(const std::string& direction)
 {
-    if (direction == "iso")
+    if (direction == "iso") {
         set_default_orientation();
-    else if (direction == "left")
+        auto_type(EType::Perspective);
+    }
+    else if (direction == "left") {
         look_at(m_target - m_distance * Vec3d::UnitX(), m_target, Vec3d::UnitZ());
-    else if (direction == "right")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "right") {
         look_at(m_target + m_distance * Vec3d::UnitX(), m_target, Vec3d::UnitZ());
-    else if (direction == "top")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "top") {
         look_at(m_target + m_distance * Vec3d::UnitZ(), m_target, Vec3d::UnitY());
-    else if (direction == "bottom")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "bottom") {
         look_at(m_target - m_distance * Vec3d::UnitZ(), m_target, -Vec3d::UnitY());
-    else if (direction == "front")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "front") {
         look_at(m_target - m_distance * Vec3d::UnitY(), m_target, Vec3d::UnitZ());
-    else if (direction == "rear")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "rear") {
         look_at(m_target + m_distance * Vec3d::UnitY(), m_target, Vec3d::UnitZ());
-    else if (direction == "topfront")
+        auto_type(EType::Ortho);
+    }
+    else if (direction == "topfront") {
         look_at(m_target - 0.707 * m_distance * Vec3d::UnitY() + 0.707 * m_distance * Vec3d::UnitZ(), m_target, Vec3d::UnitY() + Vec3d::UnitZ());
+        auto_type(EType::Perspective);
+    }
     else if (direction == "plate") {
         look_at(m_target - 0.707 * m_distance * Vec3d::UnitY() + 0.707 * m_distance * Vec3d::UnitZ(), m_target, Vec3d::UnitY() + Vec3d::UnitZ());
+        auto_type(EType::Perspective);
+    }
+}
+void Camera::select_view(ViewAngleType type)
+{
+    switch (type) {
+    case Slic3r::GUI::Camera::ViewAngleType::Iso: {
+        select_view("iso");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Top_Front: {
+        select_view("topfront");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Left: {
+        select_view("left");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Right: {
+        select_view("right");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Top_Plate:
+    case Slic3r::GUI::Camera::ViewAngleType::Top: {
+        select_view("top");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Bottom: {
+        select_view("bottom");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Front: {
+        select_view("front");
+        break;
+    }
+    case Slic3r::GUI::Camera::ViewAngleType::Rear: {
+        select_view("rear");
+        break;
+    }
+    default: break;
+    }
+}
+
+double Camera::get_near_left() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return m_frustrum_zs.first * (m_projection_matrix.matrix()(0, 2) - 1.0) / m_projection_matrix.matrix()(0, 0);
+    default:
+    case EType::Ortho:
+        return -1.0 / m_projection_matrix.matrix()(0, 0) - 0.5 * m_projection_matrix.matrix()(0, 0) * m_projection_matrix.matrix()(0, 3);
+    }
+}
+
+double Camera::get_near_right() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return m_frustrum_zs.first * (m_projection_matrix.matrix()(0, 2) + 1.0) / m_projection_matrix.matrix()(0, 0);
+    default:
+    case EType::Ortho:
+        return 1.0 / m_projection_matrix.matrix()(0, 0) - 0.5 * m_projection_matrix.matrix()(0, 0) * m_projection_matrix.matrix()(0, 3);
+    }
+}
+
+double Camera::get_near_top() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return m_frustrum_zs.first * (m_projection_matrix.matrix()(1, 2) + 1.0) / m_projection_matrix.matrix()(1, 1);
+    default:
+    case EType::Ortho:
+        return 1.0 / m_projection_matrix.matrix()(1, 1) - 0.5 * m_projection_matrix.matrix()(1, 1) * m_projection_matrix.matrix()(1, 3);
+    }
+}
+
+double Camera::get_near_bottom() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return m_frustrum_zs.first * (m_projection_matrix.matrix()(1, 2) - 1.0) / m_projection_matrix.matrix()(1, 1);
+    default:
+    case EType::Ortho:
+        return -1.0 / m_projection_matrix.matrix()(1, 1) - 0.5 * m_projection_matrix.matrix()(1, 1) * m_projection_matrix.matrix()(1, 3);
+    }
+}
+
+double Camera::get_near_width() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return 2.0 * m_frustrum_zs.first / m_projection_matrix.matrix()(0, 0);
+    default:
+    case EType::Ortho:
+        return 2.0 / m_projection_matrix.matrix()(0, 0);
+    }
+}
+
+double Camera::get_near_height() const
+{
+    switch (m_type)
+    {
+    case EType::Perspective:
+        return 2.0 * m_frustrum_zs.first / m_projection_matrix.matrix()(1, 1);
+    default:
+    case EType::Ortho:
+        return 2.0 / m_projection_matrix.matrix()(1, 1);
     }
 }
 
@@ -110,17 +264,14 @@ double Camera::get_fov() const
     };
 }
 
-void Camera::apply_viewport(int x, int y, unsigned int w, unsigned int h)
+void Camera::set_viewport(int x, int y, unsigned int w, unsigned int h)
 {
-    glsafe(::glViewport(0, 0, w, h));
-    glsafe(::glGetIntegerv(GL_VIEWPORT, m_viewport.data()));
+    m_viewport = { 0, 0, int(w), int(h) };
 }
 
-void Camera::apply_view_matrix()
+void Camera::apply_viewport() const
 {
-    glsafe(::glMatrixMode(GL_MODELVIEW));
-    glsafe(::glLoadIdentity());
-    glsafe(::glMultMatrixd(m_view_matrix.data()));
+    glsafe(::glViewport(m_viewport[0], m_viewport[1], m_viewport[2], m_viewport[3]));
 }
 
 void Camera::apply_projection(const BoundingBoxf3& box, double near_z, double far_z)
@@ -128,11 +279,7 @@ void Camera::apply_projection(const BoundingBoxf3& box, double near_z, double fa
     double w = 0.0;
     double h = 0.0;
 
-    const double old_distance = m_distance;
     m_frustrum_zs = calc_tight_frustrum_zs_around(box);
-    if (m_distance != old_distance)
-        // the camera has been moved re-apply view matrix
-        apply_view_matrix();
 
     if (near_z > 0.0)
         m_frustrum_zs.first = std::max(std::min(m_frustrum_zs.first, near_z), FrustrumMinNearZ);
@@ -166,26 +313,36 @@ void Camera::apply_projection(const BoundingBoxf3& box, double near_z, double fa
     }
     }
 
-    glsafe(::glMatrixMode(GL_PROJECTION));
-    glsafe(::glLoadIdentity());
+    apply_projection(-w, w, -h, h, m_frustrum_zs.first, m_frustrum_zs.second);
+}
+
+void Camera::apply_projection(double left, double right, double bottom, double top, double near_z, double far_z)
+{
+    assert(left != right && bottom != top && near_z != far_z);
+    const double inv_dx = 1.0 / (right - left);
+    const double inv_dy = 1.0 / (top - bottom);
+    const double inv_dz = 1.0 / (far_z - near_z);
 
     switch (m_type)
     {
     default:
     case EType::Ortho:
     {
-        glsafe(::glOrtho(-w, w, -h, h, m_frustrum_zs.first, m_frustrum_zs.second));
+        m_projection_matrix.matrix() << 2.0 * inv_dx,          0.0,           0.0,   -(left + right) * inv_dx,
+                                                 0.0, 2.0 * inv_dy,           0.0,   -(bottom + top) * inv_dy,
+                                                 0.0,          0.0, -2.0 * inv_dz, -(near_z + far_z) * inv_dz,
+                                                 0.0,          0.0,           0.0,                        1.0;
         break;
     }
     case EType::Perspective:
     {
-        glsafe(::glFrustum(-w, w, -h, h, m_frustrum_zs.first, m_frustrum_zs.second));
+        m_projection_matrix.matrix() << 2.0 * near_z * inv_dx,                   0.0,    (left + right) * inv_dx,                            0.0,
+                                                          0.0, 2.0 * near_z * inv_dy,    (bottom + top) * inv_dy,                            0.0,
+                                                          0.0,                   0.0, -(near_z + far_z) * inv_dz, -2.0 * near_z * far_z * inv_dz,
+                                                          0.0,                   0.0,                       -1.0,                            0.0;
         break;
     }
     }
-
-    glsafe(::glGetDoublev(GL_PROJECTION_MATRIX, m_projection_matrix.data()));
-    glsafe(::glMatrixMode(GL_MODELVIEW));
 }
 
 void Camera::zoom_to_box(const BoundingBoxf3& box, double margin_factor)
@@ -218,9 +375,7 @@ void Camera::debug_render() const
 
     std::string type = get_type_as_string();
     if (wxGetApp().plater()->get_mouse3d_controller().connected()
-#ifdef SUPPORT_FREE_CAMERA
-        || (wxGetApp().app_config->get("use_free_camera") == "1")
-#endif
+        || (wxGetApp().app_config->get_bool("use_free_camera"))
         )
         type += "/free";
     else
@@ -338,6 +493,15 @@ void Camera::rotate_local_around_target(const Vec3d& rotation_rad)
 	}
 }
 
+void Camera::set_rotation(const Transform3d& rotation)
+{
+    const Vec3d translation = m_view_matrix.translation() + m_view_rotation * m_target;
+    m_view_rotation = Eigen::Quaterniond(rotation.matrix().template block<3, 3>(0, 0));
+    m_view_rotation.normalize();
+    m_view_matrix.fromPositionOrientationScale(m_view_rotation * (-m_target) + translation, m_view_rotation, Vec3d(1., 1., 1.));
+    update_zenit();
+}
+
 std::pair<double, double> Camera::calc_tight_frustrum_zs_around(const BoundingBoxf3& box)
 {
     std::pair<double, double> ret;
@@ -345,8 +509,8 @@ std::pair<double, double> Camera::calc_tight_frustrum_zs_around(const BoundingBo
 
     // box in eye space
     const BoundingBoxf3 eye_box = box.transformed(m_view_matrix);
-    near_z = -eye_box.max(2);
-    far_z = -eye_box.min(2);
+    near_z = -eye_box.max.z();
+    far_z  = -eye_box.min.z();
 
     // apply margin
     near_z -= FrustrumZMargin;
@@ -496,9 +660,14 @@ double Camera::calc_zoom_to_volumes_factor(const GLVolumePtrs& volumes, Vec3d& c
 
 void Camera::set_distance(double distance)
 {
+    if(distance < EPSILON || distance > 1.0e6)
+        return;
+        
     if (m_distance != distance) {
         m_view_matrix.translate((distance - m_distance) * get_dir_forward());
         m_distance = distance;
+        
+        update_target();
     }
 }
 
@@ -525,19 +694,19 @@ void Camera::look_at(const Vec3d& position, const Vec3d& target, const Vec3d& up
     m_distance = (position - target).norm();
     const Vec3d new_position = m_target + m_distance * unit_z;
 
-    m_view_matrix(0, 0) = unit_x(0);
-    m_view_matrix(0, 1) = unit_x(1);
-    m_view_matrix(0, 2) = unit_x(2);
+    m_view_matrix(0, 0) = unit_x.x();
+    m_view_matrix(0, 1) = unit_x.y();
+    m_view_matrix(0, 2) = unit_x.z();
     m_view_matrix(0, 3) = -unit_x.dot(new_position);
 
-    m_view_matrix(1, 0) = unit_y(0);
-    m_view_matrix(1, 1) = unit_y(1);
-    m_view_matrix(1, 2) = unit_y(2);
+    m_view_matrix(1, 0) = unit_y.x();
+    m_view_matrix(1, 1) = unit_y.y();
+    m_view_matrix(1, 2) = unit_y.z();
     m_view_matrix(1, 3) = -unit_y.dot(new_position);
 
-    m_view_matrix(2, 0) = unit_z(0);
-    m_view_matrix(2, 1) = unit_z(1);
-    m_view_matrix(2, 2) = unit_z(2);
+    m_view_matrix(2, 0) = unit_z.x();
+    m_view_matrix(2, 1) = unit_z.y();
+    m_view_matrix(2, 2) = unit_z.z();
     m_view_matrix(2, 3) = -unit_z.dot(new_position);
 
     m_view_matrix(3, 0) = 0.0;
@@ -584,6 +753,11 @@ void Camera::update_zenit()
     m_zenit = Geometry::rad2deg(0.5 * M_PI - std::acos(std::clamp(-get_dir_forward().dot(Vec3d::UnitZ()), -1.0, 1.0)));
 }
 
+void Camera::update_target() {
+    Vec3d temptarget = get_position() + m_distance * get_dir_forward();
+    if (!(temptarget-m_target).isApprox(Vec3d::Zero())){
+        m_target = temptarget;
+    } 
+}
 } // GUI
 } // Slic3r
-

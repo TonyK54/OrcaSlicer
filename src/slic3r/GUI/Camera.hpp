@@ -22,6 +22,7 @@ struct Camera
     static double FrustrumMinNearZ;
     static double FrustrumZMargin;
     static double MaxFovDeg;
+    static double ZoomUnit;
 
     enum class EType : unsigned char
     {
@@ -30,13 +31,25 @@ struct Camera
         Perspective,
         Num_types
     };
-
+    enum class ViewAngleType : unsigned char {
+        Iso = 0,
+        Top_Front,
+        Left,
+        Right,
+        Top,
+        Bottom,
+        Front,
+        Rear,
+        Count_ViewAngleType,
+        Top_Plate,//for 3mf and Skip parts
+    };
     bool requires_zoom_to_bed{ false };
     //BBS
     bool requires_zoom_to_volumes{ false };
     int  requires_zoom_to_plate{ REQUIRES_ZOOM_TO_PLATE_IDLE };
 
 private:
+    bool m_prevent_auto_type = true;
     EType m_type{ EType::Perspective };
     bool m_update_config_on_type_change_enabled{ false };
     Vec3d m_target{ Vec3d::Zero() };
@@ -64,19 +77,23 @@ public:
     // valid values for type: "false" -> ortho, "true" -> perspective
     void set_type(const std::string& type) { set_type((type == "true") ? EType::Perspective : EType::Ortho); }
     void select_next_type();
+    void auto_type(EType preferred_type);
 
     void enable_update_config_on_type_change(bool enable) { m_update_config_on_type_change_enabled = enable; }
 
-    const Vec3d& get_target() const { return m_target; }
+    void translate(const Vec3d& displacement);
+    const Vec3d& get_target()  { 
+        update_target();
+        return m_target; }
     void set_target(const Vec3d& target);
 
-    double get_distance() const { return (get_position() - m_target).norm(); }
+    double get_distance()  { return (get_position() - get_target()).norm(); }
     double get_gui_scale() const { return m_gui_scale; }
     float  get_zenit() const { return m_zenit; }
 
     double get_zoom() const { return m_zoom; }
     double get_inv_zoom() const { assert(m_zoom != 0.0); return 1.0 / m_zoom; }
-    void update_zoom(double delta_zoom) { set_zoom(m_zoom / (1.0 - std::max(std::min(delta_zoom, 4.0), -4.0) * 0.1)); }
+    void update_zoom(double delta_zoom) { set_zoom(m_zoom / (1.0 - std::max(std::min(delta_zoom, 4.0), -4.0) * ZoomUnit)); }
     void set_zoom(double zoom);
 
     const BoundingBoxf3& get_scene_box() const { return m_scene_box; }
@@ -84,7 +101,7 @@ public:
 
 
     void select_view(const std::string& direction);
-
+    void select_view(ViewAngleType type);
     const std::array<int, 4>& get_viewport() const { return m_viewport; }
     const Transform3d& get_view_matrix() const { return m_view_matrix; }
     const Transform3d& get_projection_matrix() const { return m_projection_matrix; }
@@ -103,13 +120,22 @@ public:
     double get_far_z() const { return m_frustrum_zs.second; }
     const std::pair<double, double>& get_z_range() const { return m_frustrum_zs; }
 
+    double get_near_left() const;
+    double get_near_right() const;
+    double get_near_top() const;
+    double get_near_bottom() const;
+    double get_near_width() const;
+    double get_near_height() const;
+
     double get_fov() const;
 
-    void apply_viewport(int x, int y, unsigned int w, unsigned int h);
-    void apply_view_matrix();
+    void set_viewport(int x, int y, unsigned int w, unsigned int h);
+    void apply_viewport() const;
     // Calculates and applies the projection matrix tighting the frustrum z range around the given box.
     // If larger z span is needed, pass the desired values of near and far z (negative values are ignored)
     void apply_projection(const BoundingBoxf3& box, double near_z = -1.0, double far_z = -1.0);
+
+    void apply_projection(double left, double right, double bottom, double top, double near_z, double far_z);
 
     void zoom_to_box(const BoundingBoxf3& box, double margin_factor = DefaultZoomToBoxMarginFactor);
     void zoom_to_volumes(const GLVolumePtrs& volumes, double margin_factor = DefaultZoomToVolumesMarginFactor);
@@ -133,9 +159,11 @@ public:
     // rotate the camera around three axes parallel to the camera local axes and passing through m_target
     void rotate_local_around_target(const Vec3d& rotation_rad);
 
+    void set_rotation(const Transform3d& rotation);
+
     // returns true if the camera z axis (forward) is pointing in the negative direction of the world z axis
     bool is_looking_downward() const { return get_dir_forward().dot(Vec3d::UnitZ()) < 0.0; }
-
+    bool is_looking_front() const { return abs(get_dir_up().dot(Vec3d::UnitZ())-1) < 0.001; }
     // forces camera right vector to be parallel to XY plane
     void recover_from_free_camera() {
         if (std::abs(get_dir_right()(2)) > EPSILON)
@@ -161,6 +189,7 @@ private:
     void set_default_orientation();
     Vec3d validate_target(const Vec3d& target) const;
     void update_zenit();
+    void update_target();
 };
 
 } // GUI

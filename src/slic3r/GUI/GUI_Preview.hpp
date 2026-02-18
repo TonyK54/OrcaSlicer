@@ -58,12 +58,16 @@ public:
 
     //BBS
     void select_curr_plate_all();
+    void select_object_from_idx(std::vector<int> &object_idxs);
     void remove_curr_plate_all();
 
     void select_all();
     void deselect_all();
+    void exit_gizmo();
     void delete_selected();
     void center_selected();
+    void drop_selected();
+    void center_selected_plate(const int plate_idx);
     void mirror_selection(Axis axis);
 
     bool is_layers_editing_enabled() const;
@@ -88,12 +92,6 @@ class Preview : public wxPanel
     BackgroundSlicingProcess* m_process;
     GCodeProcessorResult* m_gcode_result;
 
-#ifdef __linux__
-    // We are getting mysterious crashes on Linux in gtk due to OpenGL context activation GH #1874 #1955.
-    // So we are applying a workaround here.
-    bool m_volumes_cleanup_required { false };
-#endif /* __linux__ */
-
     // Calling this function object forces Plater::schedule_background_process.
     std::function<void()> m_schedule_background_process;
 
@@ -105,6 +103,7 @@ class Preview : public wxPanel
     const Slic3r::PrintBase* m_loaded_print { nullptr };
     //BBS: add only gcode mode
     bool m_only_gcode { false };
+    bool m_reload_paint_after_background_process_apply{false};
 
 public:
     enum class OptionType : unsigned int
@@ -141,8 +140,7 @@ public:
 
     //BBS: add only gcode mode
     void load_print(bool keep_z_range = false, bool only_gcode = false);
-    void reload_print(bool keep_volumes = false, bool only_gcode = false);
-    void refresh_print();
+    void reload_print(bool only_gcode = false);
     //BBS: always load shell at preview
     void load_shells(const Print& print, bool force_previewing = false);
     void reset_shells();
@@ -158,6 +156,8 @@ public:
     void show_sliders(bool show = true);
     void show_moves_sliders(bool show = true);
     void show_layers_sliders(bool show = true);
+    void set_reload_paint_after_background_process_apply(bool flag) { m_reload_paint_after_background_process_apply = flag; }
+    bool get_reload_paint_after_background_process_apply() { return m_reload_paint_after_background_process_apply; }
 
 private:
     bool init(wxWindow* parent, Bed3D& bed, Model* model);

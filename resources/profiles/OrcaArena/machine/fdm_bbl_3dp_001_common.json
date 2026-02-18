@@ -1,6 +1,7 @@
 {
     "type": "machine",
     "name": "fdm_bbl_3dp_001_common",
+    "inherits": "fdm_machine_common",
     "from": "system",
     "instantiation": "false",
     "printable_area": [
@@ -24,7 +25,6 @@
     "extruder_offset": [
         "0x0"
     ],
-    "inherits": "fdm_machine_common",
     "machine_max_acceleration_e": [
         "5000",
         "5000"
@@ -38,8 +38,8 @@
         "5000"
     ],
     "machine_max_acceleration_travel": [
-        "9000",
-        "9000"
+        "20000",
+        "20000"
     ],
     "machine_max_acceleration_x": [
         "20000",
@@ -94,7 +94,7 @@
         "0"
     ],
     "max_layer_height": [
-        "0.28"
+        "0.32"
     ],
     "min_layer_height": [
         "0.08"
@@ -141,7 +141,7 @@
         "30"
     ],
     "z_hop_types": [
-      "Spiral Lift"
+        "Spiral Lift"
     ],
     "nozzle_type": "hardened_steel",
     "silent_mode": "0",

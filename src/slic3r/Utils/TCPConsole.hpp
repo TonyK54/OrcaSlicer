@@ -7,6 +7,7 @@
 #include <boost/system/system_error.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/streambuf.hpp>
+#include "SerialMessage.hpp"
 
 namespace Slic3r {
 namespace Utils {
@@ -30,6 +31,19 @@ public:
         m_connect_timeout = std::chrono::milliseconds(5000);
         m_write_timeout = std::chrono::milliseconds(10000);
         m_read_timeout = std::chrono::milliseconds(10000);
+        m_tcp_queue_delay = std::chrono::milliseconds(0);
+    }
+
+    void set_write_timeout(std::chrono::steady_clock::duration timeout) {
+        m_write_timeout = timeout;
+    }
+
+    void set_read_timeout(std::chrono::steady_clock::duration timeout) {
+        m_read_timeout = timeout;
+    }
+
+    void set_tcp_queue_delay(std::chrono::steady_clock::duration delay) { 
+        m_tcp_queue_delay = delay;
     }
 
     void set_line_delimiter(const std::string& newline) {
@@ -45,7 +59,7 @@ public:
         m_port_name = port_name;
     }
 
-    bool enqueue_cmd(const std::string& cmd) {
+    bool enqueue_cmd(const SerialMessage& cmd) {
         // TODO: Add multithread protection to queue
         m_cmd_queue.push_back(cmd);
         return true;
@@ -57,7 +71,7 @@ public:
 private:
     void handle_connect(const boost::system::error_code& ec);
     void handle_read(const boost::system::error_code& ec, std::size_t bytes_transferred);
-    void handle_write(const boost::system::error_code& ec, std::size_t bytes_transferred);
+    void handle_write(const boost::system::error_code& ec, std::size_t bytes_transferred, SerialMessageType messageType);
 
     void transmit_next_command();
     void wait_next_line();
@@ -73,8 +87,9 @@ private:
     std::chrono::steady_clock::duration     m_connect_timeout;
     std::chrono::steady_clock::duration     m_write_timeout;
     std::chrono::steady_clock::duration     m_read_timeout;
+    std::chrono::steady_clock::duration     m_tcp_queue_delay;
 
-    std::deque<std::string>                 m_cmd_queue;
+    std::deque<SerialMessage>                 m_cmd_queue;
 
     boost::asio::io_context                 m_io_context;
     tcp::resolver                           m_resolver;

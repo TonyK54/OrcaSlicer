@@ -6,7 +6,7 @@
 #include "wx/cmdline.h"
 #include "wx/notifmsg.h"
 #include "wx/settings.h"
-#include "wx/webview.h"
+#include <wx/webview.h>
 
 #if wxUSE_WEBVIEW_EDGE
 #include "wx/msw/webview_edge.h"
@@ -27,6 +27,9 @@
 
 
 namespace Slic3r {
+
+class NetworkAgent;
+
 namespace GUI {
 
 
@@ -90,9 +93,15 @@ public:
     void OnFreshLoginStatus(wxTimerEvent &event);
 
 public:
-    void SendRecentList(wxString const &sequence_id);
+    void SendRecentList(int images);
+    void SetLoginPanelVisibility(bool bshow);
+    void SendDesignStaffpick(bool on);
+    void OpenModelDetail(std::string id, NetworkAgent *agent);
     void SendLoginInfo();
     void ShowNetpluginTip();
+
+    void get_design_staffpick(int offset, int limit, std::function<void(std::string)> callback);
+    int  get_model_mall_detail_url(std::string *url, std::string id);
 
     void update_mode();
 private:

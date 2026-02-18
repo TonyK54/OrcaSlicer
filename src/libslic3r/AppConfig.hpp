@@ -9,6 +9,7 @@
 
 #include "libslic3r/Config.hpp"
 #include "libslic3r/Semver.hpp"
+#include "calib.hpp"
 
 using namespace nlohmann;
 
@@ -17,11 +18,40 @@ using namespace nlohmann;
 #define ENV_PRE_HOST		"2"
 #define ENV_PRODUCT_HOST	"3"
 
+#define SETTING_PROJECT_LOAD_BEHAVIOUR "project_load_behaviour"
+#define OPTION_PROJECT_LOAD_BEHAVIOUR_LOAD_ALL "load_all"
+#define OPTION_PROJECT_LOAD_BEHAVIOUR_ASK_WHEN_RELEVANT "ask_when_relevant"
+#define OPTION_PROJECT_LOAD_BEHAVIOUR_ALWAYS_ASK "always_ask"
+#define OPTION_PROJECT_LOAD_BEHAVIOUR_LOAD_GEOMETRY "load_geometry_only"
+
+#define SETTING_NETWORK_PLUGIN_VERSION "network_plugin_version"
+#define SETTING_NETWORK_PLUGIN_SKIPPED_VERSIONS "network_plugin_skipped_versions"
+#define SETTING_NETWORK_PLUGIN_UPDATE_DISABLED "network_plugin_update_prompts_disabled"
+#define SETTING_NETWORK_PLUGIN_REMIND_LATER "network_plugin_remind_later"
+#define SETTING_USE_ENCRYPTED_TOKEN_FILE "use_encrypted_token_file"
+#define BAMBU_NETWORK_AGENT_VERSION_LEGACY  "01.10.01.01"
+
 #define SUPPORT_DARK_MODE
 //#define _MSW_DARK_MODE
 
 
 namespace Slic3r {
+
+
+// Connected LAN mode BambuLab printer
+struct BBLocalMachine
+{
+    std::string dev_name;
+    std::string dev_ip;
+    std::string dev_id; /* serial number */
+    std::string printer_type; /* model_id */
+
+    bool operator==(const BBLocalMachine& other) const
+    {
+        return dev_name == other.dev_name && dev_ip == other.dev_ip && dev_id == other.dev_id && printer_type == other.printer_type;
+    }
+    bool operator!=(const BBLocalMachine& other) const { return !operator==(other); }
+};
 
 class AppConfig
 {
@@ -44,6 +74,7 @@ public:
 
 	std::string get_language_code();
 	std::string get_hms_host();
+	bool get_stealth_mode();
 
 	// Clear and reset to defaults.
 	void 			   	reset();
@@ -70,7 +101,7 @@ public:
 		if (it == m_storage.end())
 			return false;
 		auto it2 = it->second.find(key);
-		if (it2 == it->second.end()) 
+		if (it2 == it->second.end())
 			return false;
 		value = it2->second;
 		return true;
@@ -79,6 +110,10 @@ public:
 		{ std::string value; this->get(section, key, value); return value; }
 	std::string 		get(const std::string &key) const
 		{ std::string value; this->get("app", key, value); return value; }
+	bool				get_bool(const std::string &section, const std::string &key) const
+		{ return this->get(section, key) == "true" || this->get(key) == "1"; }
+	bool				get_bool(const std::string &key) const
+		{ return this->get_bool("app", key); }
 	void			    set(const std::string &section, const std::string &key, const std::string &value)
 	{
 #ifndef NDEBUG
@@ -146,7 +181,8 @@ public:
 	{
 		auto it = m_storage.find(section);
 		if (it != m_storage.end()) {
-			it->second.erase(key);
+            it->second.erase(key);
+            m_dirty = true;
 		}
 	}
 
@@ -167,7 +203,57 @@ public:
 	void 				set_vendors(VendorMap &&vendors) { m_vendors = std::move(vendors); m_dirty = true; }
 	const VendorMap&    vendors() const { return m_vendors; }
 
-	const std::vector<std::string> &get_filament_presets() const { return m_filament_presets; }
+	// Orca printer settings
+    typedef std::map<std::string, nlohmann::json> MachineSettingMap;
+    bool has_printer_settings(std::string printer) const {
+        return m_printer_settings.find(printer) != m_printer_settings.end();
+    }
+    void clear_printer_settings(std::string printer) {
+        m_printer_settings.erase(printer);
+        m_dirty = true;
+    }
+    bool has_printer_setting(std::string printer, std::string name) {
+        if (!has_printer_settings(printer))
+            return false;
+        if (!m_printer_settings[printer].contains(name))
+            return false;
+        return true;
+    }
+    std::string get_printer_setting(std::string printer, std::string name) {
+        if (!has_printer_setting(printer, name))
+            return "";
+        return m_printer_settings[printer][name];
+    }
+    void set_printer_setting(std::string printer, std::string name, std::string value) {
+        m_printer_settings[printer][name] = value;
+        m_dirty = true;
+    }
+
+	const std::map<std::string, BBLocalMachine>& get_local_machines() const { return m_local_machines; }
+	void erase_local_machine(std::string dev_id)
+    {
+        auto it = m_local_machines.find(dev_id);
+        if (it != m_local_machines.end()) {
+            m_local_machines.erase(it);
+            m_dirty = true;
+        }
+    }
+    void update_local_machine(const BBLocalMachine& machine)
+    {
+        auto it = m_local_machines.find(machine.dev_id);
+        if (it != m_local_machines.end()) {
+            const auto& current = it->second;
+            if (machine != current) {
+                m_local_machines[machine.dev_id] = machine;
+                m_dirty = true;
+            }
+        } else {
+            m_local_machines[machine.dev_id] = machine;
+            m_dirty = true;
+        }
+    }
+
+    const std::vector<std::string> &get_filament_presets() const { return m_filament_presets; }
     void set_filament_presets(const std::vector<std::string> &filament_presets){
         m_filament_presets = filament_presets;
         m_dirty            = true;
@@ -177,6 +263,9 @@ public:
         m_filament_colors = filament_colors;
         m_dirty                = true;
     }
+
+	const std::vector<PrinterCaliInfo> &get_printer_cali_infos() const { return m_printer_cali_infos; }
+    void save_printer_cali_infos(const PrinterCaliInfo& cali_info, bool need_change_status = true);
 
 	// return recent/last_opened_folder or recent/settings_folder or empty string.
 	std::string 		get_last_dir() const;
@@ -196,7 +285,13 @@ public:
 	std::string         get_country_code();
     bool				is_engineering_region();
 
-	// reset the current print / filament / printer selections, so that 
+    void                save_custom_color_to_config(const std::vector<std::string> &colors);
+    std::vector<std::string> get_custom_color_from_config();
+
+    void save_nozzle_volume_types_to_config(const std::string& printer_name, const std::string& nozzle_volume_types);
+    std::string get_nozzle_volume_types_from_config(const std::string& printer_name);
+
+	// reset the current print / filament / printer selections, so that
 	// the  PresetBundle::load_selections(const AppConfig &config) call will select
 	// the first non-default preset when called.
     void                reset_selections();
@@ -212,6 +307,9 @@ public:
 	// This returns a hardcoded string unless it is overriden by "version_check_url" in the ini file.
 	std::string 		version_check_url() const;
 
+	// Get the Orca profile update url.
+	std::string 		profile_update_url() const;
+
 	// Returns the original Slic3r version found in the ini file before it was overwritten
 	// by the current version
 	Semver 				orig_version() const { return m_orig_version; }
@@ -225,7 +323,7 @@ public:
     std::vector<std::string> get_recent_projects() const;
     void set_recent_projects(const std::vector<std::string>& recent_projects);
 
-	void set_mouse_device(const std::string& name, double translation_speed, double translation_deadzone, float rotation_speed, float rotation_deadzone, double zoom_speed, bool swap_yz);
+	void set_mouse_device(const std::string& name, double translation_speed, double translation_deadzone, float rotation_speed, float rotation_deadzone, double zoom_speed, bool swap_yz, bool invert_x, bool invert_y, bool invert_z, bool invert_yaw, bool invert_pitch, bool invert_roll);
 	std::vector<std::string> get_mouse_device_names() const;
 	bool get_mouse_device_translation_speed(const std::string& name, double& speed) const
 		{ return get_3dmouse_device_numeric_value(name, "translation_speed", speed); }
@@ -239,13 +337,41 @@ public:
 		{ return get_3dmouse_device_numeric_value(name, "zoom_speed", speed); }
 	bool get_mouse_device_swap_yz(const std::string& name, bool& swap) const
 		{ return get_3dmouse_device_numeric_value(name, "swap_yz", swap); }
+	bool get_mouse_device_invert_x(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_x", invert); }
+	bool get_mouse_device_invert_y(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_y", invert); }
+	bool get_mouse_device_invert_z(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_z", invert); }
+	bool get_mouse_device_invert_yaw(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_yaw", invert); }
+	bool get_mouse_device_invert_pitch(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_pitch", invert); }
+	bool get_mouse_device_invert_roll(const std::string& name, bool& invert) const
+		{ return get_3dmouse_device_numeric_value(name, "invert_roll", invert); }
 
 	static const std::string SECTION_FILAMENTS;
     static const std::string SECTION_MATERIALS;
+    static const std::string SECTION_EMBOSS_STYLE;
+
+    std::string get_network_plugin_version() const;
+    void set_network_plugin_version(const std::string& version);
+
+    std::vector<std::string> get_skipped_network_versions() const;
+    void add_skipped_network_version(const std::string& version);
+    bool is_network_version_skipped(const std::string& version) const;
+    void clear_skipped_network_versions();
+
+    bool is_network_update_prompt_disabled() const;
+    void set_network_update_prompt_disabled(bool disabled);
+
+    bool should_remind_network_update_later() const;
+    void set_remind_network_update_later(bool remind);
+    void clear_remind_network_update_later();
 
 private:
 	template<typename T>
-	bool get_3dmouse_device_numeric_value(const std::string &device_name, const char *parameter_name, T &out) const 
+	bool get_3dmouse_device_numeric_value(const std::string &device_name, const char *parameter_name, T &out) const
 	{
 	    std::string key = std::string("mouse_device:") + device_name;
 	    auto it = m_storage.find(key);
@@ -265,6 +391,9 @@ private:
 
 	// Map of enabled vendors / models / variants
 	VendorMap                                                   m_vendors;
+
+	// Preset for each machine
+	MachineSettingMap											m_printer_settings;
 	// Has any value been modified since the config.ini has been last saved or loaded?
 	bool														m_dirty;
 	// Original version found in the ini file before it was overwritten
@@ -276,6 +405,12 @@ private:
 
 	std::vector<std::string>									m_filament_presets;
     std::vector<std::string>									m_filament_colors;
+	std::vector<std::string>									m_filament_multi_colors;
+	std::vector<std::string>									m_filament_color_types;
+
+	std::vector<PrinterCaliInfo>								m_printer_cali_infos;
+
+	std::map<std::string, BBLocalMachine>						m_local_machines;
 };
 
 } // namespace Slic3r

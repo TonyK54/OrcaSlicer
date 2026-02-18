@@ -3,6 +3,7 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/log/trivial.hpp>
 
 #include "I18N.hpp"
 
@@ -68,6 +69,7 @@ std::string PrintBase::output_filename(const std::string &format, const std::str
     	cfg = *config_override;
     cfg.set_key_value("version", new ConfigOptionString(std::string(SoftFever_VERSION)));
     PlaceholderParser::update_timestamp(cfg);
+    PlaceholderParser::update_user_name(cfg);
     this->update_object_placeholders(cfg, default_ext);
     if (! filename_base.empty()) {
 		cfg.set_key_value("input_filename", new ConfigOptionString(filename_base + default_ext));
@@ -78,7 +80,7 @@ std::string PrintBase::output_filename(const std::string &format, const std::str
 			cfg.opt_string("input_filename_base") + default_ext :
 			this->placeholder_parser().process(format, 0, &cfg);
         if (filename.extension().empty())
-            filename = boost::filesystem::change_extension(filename, default_ext);
+            filename.replace_extension(default_ext);
         return filename.string();
     } catch (std::runtime_error &err) {
         throw Slic3r::PlaceholderParserError(L("Failed processing of the filename_format template.") + "\n" + err.what());
@@ -107,14 +109,14 @@ void  PrintBase::set_status(int percent, const std::string &message, unsigned in
 	if (m_status_callback)
         m_status_callback(SlicingStatus(percent, message, flags, warning_step));
     else
-        BOOST_LOG_TRIVIAL(info) <<boost::format("Percent %1%: %2%\n")%percent %message.c_str();
+        BOOST_LOG_TRIVIAL(debug) <<boost::format("Percent %1%: %2%\n")%percent %message.c_str();
 }
 
-void PrintBase::status_update_warnings(int step, PrintStateBase::WarningLevel /* warning_level */,
+void PrintBase::status_update_warnings(int step, PrintStateBase::WarningLevel  warning_level,
     const std::string &message, const PrintObjectBase* print_object, PrintStateBase::SlicingNotificationType message_id)
 {
     if (this->m_status_callback) {
-        auto status = print_object ? SlicingStatus(*print_object, step, message, message_id) : SlicingStatus(*this, step, message, message_id);
+        auto status = print_object ? SlicingStatus(*print_object, step, message, message_id, warning_level) : SlicingStatus(*this, step, message, message_id, warning_level);
         m_status_callback(status);
     }
     else if (! message.empty())
@@ -122,12 +124,12 @@ void PrintBase::status_update_warnings(int step, PrintStateBase::WarningLevel /*
 }
 
 //BBS: add PrintObject id into slicing status
-void PrintBase::status_update_warnings(int step, PrintStateBase::WarningLevel /* warning_level */,
+void PrintBase::status_update_warnings(int step, PrintStateBase::WarningLevel warning_level,
     const std::string& message, PrintObjectBase &object, PrintStateBase::SlicingNotificationType message_id)
 {
     //BBS: add object it into slicing status
     if (this->m_status_callback) {
-        m_status_callback(SlicingStatus(object, step, message, message_id));
+        m_status_callback(SlicingStatus(object, step, message, message_id, warning_level));
     }
     else if (!message.empty())
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(", PrintObject warning: %1%\n")% message.c_str();

@@ -53,7 +53,7 @@ extern "C"{
 
 namespace Slic3r {
 
-static std::string saving_failed_str = L("Saving objects into the 3mf failed.");
+static std::string saving_failed_str = L("Saving objects into the 3MF failed.");
 
 HMODULE							s_hRuntimeObjectLibrary  = nullptr;
 FunctionRoInitialize			s_RoInitialize			 = nullptr;
@@ -323,9 +323,8 @@ public:
 // fix_result containes a message if fixing failed
 bool fix_model_by_win10_sdk_gui(ModelObject &model_object, int volume_idx, GUI::ProgressDialog& progress_dialog, const wxString& msg_header, std::string& fix_result)
 {
-	std::mutex 						mutex;
-	std::condition_variable			condition;
-	std::unique_lock<std::mutex>	lock(mutex);
+    std::mutex mtx;
+    std::condition_variable condition;
 	struct Progress {
 		std::string 				message;
 		int 						percent  = 0;
@@ -344,8 +343,8 @@ bool fix_model_by_win10_sdk_gui(ModelObject &model_object, int volume_idx, GUI::
 	// (It seems like wxWidgets initialize the COM contex as single threaded and we need a multi-threaded context).
 	bool   success = false;
 	size_t ivolume = 0;
-	auto on_progress = [&mutex, &condition, &ivolume, &volumes, &progress](const char *msg, unsigned prcnt) {
-        std::lock_guard<std::mutex> lk(mutex);
+	auto on_progress = [&mtx, &condition, &ivolume, &volumes, &progress](const char *msg, unsigned prcnt) {
+	    std::unique_lock<std::mutex> lock(mtx);
 		progress.message = msg;
 		progress.percent = (int)floor((float(prcnt) + float(ivolume) * 100.f) / float(volumes.size()));
 		progress.updated = true;
@@ -373,7 +372,7 @@ bool fix_model_by_win10_sdk_gui(ModelObject &model_object, int volume_idx, GUI::
                 mo->add_instance();
 				if (!Slic3r::store_3mf(path_src.string().c_str(), &model, nullptr, false, nullptr, false)) {
 					boost::filesystem::remove(path_src);
-					throw Slic3r::RuntimeError(L("Exporting 3mf file failed"));
+					throw Slic3r::RuntimeError(L("Exporting 3MF file failed"));
 				}
 				model.clear_objects();
 				model.clear_materials();
@@ -389,15 +388,15 @@ bool fix_model_by_win10_sdk_gui(ModelObject &model_object, int volume_idx, GUI::
 				bool loaded = Slic3r::load_3mf(path_dst.string().c_str(), config, config_substitutions, &model, false);
 			    boost::filesystem::remove(path_dst);
 				if (! loaded)
-	 				throw Slic3r::RuntimeError(L("Import 3mf file failed"));
+					throw Slic3r::RuntimeError(L("Import 3MF file failed"));
 	 			if (model.objects.size() == 0)
-	 				throw Slic3r::RuntimeError(L("Repaired 3mf file does not contain any object"));
+					throw Slic3r::RuntimeError(L("Repaired 3MF file does not contain any object"));
 	 			if (model.objects.size() > 1)
-	 				throw Slic3r::RuntimeError(L("Repaired 3mf file contains more than one object"));
+					throw Slic3r::RuntimeError(L("Repaired 3MF file contains more than one object"));
 	 			if (model.objects.front()->volumes.size() == 0)
-	 				throw Slic3r::RuntimeError(L("Repaired 3mf file does not contain any volume"));
+					throw Slic3r::RuntimeError(L("Repaired 3MF file does not contain any volume"));
 				if (model.objects.front()->volumes.size() > 1)
-	 				throw Slic3r::RuntimeError(L("Repaired 3mf file contains more than one volume"));
+					throw Slic3r::RuntimeError(L("Repaired 3MF file contains more than one volume"));
 	 			meshes_repaired.emplace_back(std::move(model.objects.front()->volumes.front()->mesh()));
 			}
 			for (size_t i = 0; i < volumes.size(); ++ i) {
@@ -422,6 +421,7 @@ bool fix_model_by_win10_sdk_gui(ModelObject &model_object, int volume_idx, GUI::
 		}
 	});
     while (! finished) {
+		std::unique_lock<std::mutex> lock(mtx);
 		condition.wait_for(lock, std::chrono::milliseconds(250), [&progress]{ return progress.updated; });
 		// decrease progress.percent value to avoid closing of the progress dialog
 		if (!progress_dialog.Update(progress.percent-1, msg_header + _(progress.message)))

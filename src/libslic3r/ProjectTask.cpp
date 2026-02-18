@@ -9,6 +9,7 @@
 #include <codecvt>
 
 #include <boost/random.hpp>
+#include <boost/log/trivial.hpp>
 #include <boost/generator_iterator.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -183,6 +184,13 @@ namespace Slic3r {
         project_url_md5.clear();
         project_3mf_file.clear();
         project_path.clear();
+    }
+
+    BBLModelTask::BBLModelTask()
+    {
+        job_id      = -1;
+        design_id   = -1;
+        profile_id  = -1;
     }
 
 } // namespace Slic3r

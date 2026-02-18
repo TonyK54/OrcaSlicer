@@ -8,6 +8,7 @@
 #include "libslic3r/BlacklistedLibraryCheck.hpp"
 #include "libslic3r/Platform.hpp"
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/Color.hpp"
 
 #include "slic3r/GUI/format.hpp"
 #include "slic3r/Utils/Http.hpp"
@@ -165,7 +166,7 @@ static bool check_internet_connection_win()
 
 
 // Last version where the info was sent / dialog dismissed is saved in appconfig.
-// Only show the dialog when this info is not found (e.g. fresh install) or when
+// Only show the dialog when this info was not found (e.g. fresh install) or when
 // current version is newer. Only major and minor versions are compared.
 static bool should_dialog_be_shown()
 {
@@ -402,7 +403,7 @@ static std::string generate_system_info_json()
     namespace pt = boost::property_tree;
 
     pt::ptree data_node;
-    data_node.put("BambuStudioVersion", SLIC3R_VERSION);
+    data_node.put("OrcaSlicerVersion", SLIC3R_VERSION);
     data_node.put("BuildID", SLIC3R_BUILD_ID);
     data_node.put("UniqueID", unique_id);
     data_node.put("Platform", platform_to_string(platform()));
@@ -437,12 +438,12 @@ static std::string generate_system_info_json()
     );
 #endif // __WXGTK__
     data_node.put("SystemLanguage", sys_language);
-    data_node.put("TranslationLanguage: ", wxGetApp().app_config->get("language"));
+    data_node.put("TranslationLanguage: ", wxGetApp().current_language_code_safe());
 
 
     pt::ptree hw_node;
     {
-        hw_node.put("ArchName", wxPlatformInfo::Get().GetArchName());
+        hw_node.put("ArchName", wxPlatformInfo::Get().GetBitnessName());
         size_t num = std::round(Slic3r::total_physical_memory()/107374100.);
         hw_node.put("RAM_GiB", std::to_string(num / 10) + "." + std::to_string(num % 10));
     }
@@ -497,7 +498,7 @@ static std::string generate_system_info_json()
         std::vector<std::wstring> blacklisted_libraries;
         BlacklistedLibraryCheck::get_instance().get_blacklisted(blacklisted_libraries);
         for (const std::wstring& wstr : blacklisted_libraries) {
-            std::string utf8 = boost::nowide::narrow(wstr);
+            std::string utf8 = into_u8(wstr);
             if (size_t last_bs_pos = utf8.find_last_of("\\"); last_bs_pos < utf8.size() - 1) {
                 // Remove anything before last backslash so we don't send the path to the DLL.
                 utf8.erase(0, last_bs_pos + 1);
@@ -591,9 +592,8 @@ SendSystemInfoDialog::SendSystemInfoDialog(wxWindow* parent)
     wxColour bgr_clr = wxGetApp().get_window_default_clr();
     SetBackgroundColour(bgr_clr);
     const auto text_clr = wxGetApp().get_label_clr_default();
-    auto text_clr_str = wxString::Format(wxT("#%02X%02X%02X"), text_clr.Red(), text_clr.Green(), text_clr.Blue());
-    auto bgr_clr_str = wxString::Format(wxT("#%02X%02X%02X"), bgr_clr.Red(), bgr_clr.Green(), bgr_clr.Blue());
-
+    auto text_clr_str = encode_color(ColorRGB(text_clr.Red(), text_clr.Green(), text_clr.Blue()));
+    auto bgr_clr_str = encode_color(ColorRGB(bgr_clr.Red(), bgr_clr.Green(), bgr_clr.Blue()));
 
     auto *topSizer = new wxBoxSizer(wxVERTICAL);
     auto *vsizer = new wxBoxSizer(wxVERTICAL);
@@ -608,7 +608,7 @@ SendSystemInfoDialog::SendSystemInfoDialog(wxWindow* parent)
     wxString html = GUI::format_wxstr(
             "<html><body bgcolor=%1%><font color=%2%>"
             "<table><tr><td>"
-            "<img src = \"" + resources_dir() + "/images/BambuStudio_192px.png\" />"
+            "<img src = \"" + resources_dir() + "/images/OrcaSlicer_192px.png\" />"
             "</td><td align=\"left\">"
             + text0 + "<br / ><br / >"
             + text1 + "<br /><br />"
@@ -728,7 +728,7 @@ bool SendSystemInfoDialog::send_info(wxString& message)
                 if (job_done) // UI thread wants us to cancel.
                     cancel = true;
                 if (cancel)
-                    //result = { Result::Cancelled, _L("Sending system info was cancelled.") };
+                    //result = { Result::Cancelled, _L("Sending system info was canceled.") };
                     result = {Result::Cancelled, wxEmptyString};
             })
             .perform_sync();

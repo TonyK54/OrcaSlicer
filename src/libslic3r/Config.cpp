@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <regex>
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/erase.hpp>
@@ -17,7 +18,8 @@
 #include <boost/config.hpp>
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/nowide/cenv.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/nowide/cstdlib.hpp>
 #include <boost/nowide/iostream.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/property_tree/ini_parser.hpp>
@@ -43,7 +45,7 @@ namespace Slic3r {
 //static const std::string CONFIG_INHERITS_KEY = "inherits";
 //static const std::string CONFIG_INSTANT_KEY = "instantiation";
 
-// Escape \n, \r and backslash
+// Escape double quotes, \n, \r and backslash
 std::string escape_string_cstyle(const std::string &str)
 {
     // Allocate a buffer twice the input string length,
@@ -58,9 +60,9 @@ std::string escape_string_cstyle(const std::string &str)
         } else if (c == '\n') {
             (*outptr ++) = '\\';
             (*outptr ++) = 'n';
-        } else if (c == '\\') {
-            (*outptr ++) = '\\';
-            (*outptr ++) = '\\';
+        } else if (c == '\\' || c == '"') {
+            (*outptr++) = '\\';
+            (*outptr++) = c;
         } else
             (*outptr ++) = c;
     }
@@ -117,7 +119,7 @@ std::string escape_strings_cstyle(const std::vector<std::string> &strs)
     return std::string(out.data(), outptr - out.data());
 }
 
-// Unescape \n, \r and backslash
+// Unescape double quotes, \n, \r and backslash
 bool unescape_string_cstyle(const std::string &str, std::string &str_out)
 {
     std::vector<char> out(str.size(), 0);
@@ -308,6 +310,7 @@ ConfigOption* ConfigOptionDef::create_default_option() const
                 opt->keys_map = this->enum_keys_map;
                 return opt;
             }
+            delete dft;
         }
 
         return this->default_value->clone();
@@ -448,6 +451,23 @@ void ConfigBase::apply_only(const ConfigBase &other, const t_config_option_keys 
         if (my_opt == nullptr) {
             // opt_key does not exist in this ConfigBase and it cannot be created, because it is not defined by this->def().
             // This is only possible if other is of DynamicConfig type.
+            if (auto n = opt_key.find('#'); n != std::string::npos) {
+                auto opt_key2 = opt_key.substr(0, n);
+                auto my_opt2 = dynamic_cast<ConfigOptionVectorBase*>(this->option(opt_key2));
+                auto other_opt = other.option(opt_key2);
+                if (my_opt2 == nullptr && other_opt) {
+                    my_opt2 = dynamic_cast<ConfigOptionVectorBase *>(this->option(opt_key2, true));
+                    if (my_opt2->empty()) {
+                        my_opt2->resize(1, other_opt);
+                    }
+                }   
+                if (my_opt2) {
+                    int index = std::atoi(opt_key.c_str() + n + 1);
+                    if (other_opt)
+                        my_opt2->set_at(other_opt, index, index);
+                    continue;
+                }
+            }
             if (ignore_nonexistent)
                 continue;
             throw UnknownOptionException(opt_key);
@@ -653,22 +673,52 @@ double ConfigBase::get_abs_value(const t_config_option_key &opt_key) const
 {
     // Get stored option value.
     const ConfigOption *raw_opt = this->option(opt_key);
+    if (raw_opt == nullptr) {
+      std::stringstream ss;
+      ss << "You can't define an option that need " << opt_key << " without defining it!";
+      throw std::runtime_error(ss.str());
+    }
     assert(raw_opt != nullptr);
+
     if (raw_opt->type() == coFloat)
         return static_cast<const ConfigOptionFloat*>(raw_opt)->value;
+    if (raw_opt->type() == coInt)
+      return static_cast<const ConfigOptionInt *>(raw_opt)->value;
+    if (raw_opt->type() == coBool)
+      return static_cast<const ConfigOptionBool *>(raw_opt)->value ? 1 : 0;
+
+    const ConfigOptionPercent *cast_opt = nullptr;
     if (raw_opt->type() == coFloatOrPercent) {
-        // Get option definition.
-        const ConfigDef *def = this->def();
-        if (def == nullptr)
-            throw NoDefinitionException(opt_key);
-        const ConfigOptionDef *opt_def = def->get(opt_key);
-        assert(opt_def != nullptr);
-        // Compute absolute value over the absolute value of the base option.
-        //FIXME there are some ratio_over chains, which end with empty ratio_with.
-        // For example, XXX_extrusion_width parameters are not handled by get_abs_value correctly.
-        return opt_def->ratio_over.empty() ? 0. :
-            static_cast<const ConfigOptionFloatOrPercent*>(raw_opt)->get_abs_value(this->get_abs_value(opt_def->ratio_over));
+        auto cofop = static_cast<const ConfigOptionFloatOrPercent*>(raw_opt);
+            if (cofop->value == 0 && boost::ends_with(opt_key, "_line_width")) {
+                return this->get_abs_value("line_width");
+            }
+            if (!cofop->percent)
+                return cofop->value;
+            cast_opt = cofop;
     }
+
+    if (raw_opt->type() == coPercent) {
+      cast_opt = static_cast<const ConfigOptionPercent *>(raw_opt);
+    }
+
+    // Get option definition.
+    const ConfigDef *def = this->def();
+    if (def == nullptr)
+        throw NoDefinitionException(opt_key);
+    const ConfigOptionDef *opt_def = def->get(opt_key);
+
+
+    assert(opt_def != nullptr);
+    if (opt_def->ratio_over == "")
+        return cast_opt->get_abs_value(1);
+    // Compute absolute value over the absolute value of the base option.
+    //FIXME there are some ratio_over chains, which end with empty ratio_with.
+    // For example, XXX_extrusion_width parameters are not handled by get_abs_value correctly.
+    return opt_def->ratio_over.empty() ? 0. :
+        static_cast<const ConfigOptionFloatOrPercent*>(raw_opt)->get_abs_value(this->get_abs_value(opt_def->ratio_over));
+    
+
     throw ConfigurationError("ConfigBase::get_abs_value(): Not a valid option type for get_abs_value()");
 }
 
@@ -706,6 +756,8 @@ void ConfigBase::setenv_() const
 //BBS
 ConfigSubstitutions ConfigBase::load_string_map(std::map<std::string, std::string>& key_values, ForwardCompatibilitySubstitutionRule compatibility_rule)
 {
+    CNumericLocalesSetter locales_setter;
+
     ConfigSubstitutionContext substitutions_ctxt(compatibility_rule);
     std::map<std::string, std::string>::iterator it;
     for (it = key_values.begin(); it != key_values.end(); it++) {
@@ -752,10 +804,60 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
     json j;
     std::list<std::string> different_settings_append;
     std::string new_support_style;
+    std::string is_infill_first;
+    std::string get_wall_sequence;
     bool is_project_settings = false;
+
+    CNumericLocalesSetter locales_setter;
+
+    std::function<bool(const json::const_iterator&, const char,const char,const bool,std::string&)> parse_str_arr = [&parse_str_arr](const json::const_iterator& it, const char single_sep,const char array_sep,const bool escape_string_style,std::string& value_str)->bool {
+        // must have consistent type name
+        std::string consistent_type;
+        for (auto iter = it.value().begin(); iter != it.value().end(); ++iter) {
+            if (consistent_type.empty())
+                consistent_type = iter.value().type_name();
+            else {
+                if (consistent_type != iter.value().type_name())
+                    return false;
+            }
+        }
+
+        bool first = true;
+        for (auto iter = it.value().begin(); iter != it.value().end(); iter++) {
+            if (iter.value().is_array()) {
+                if (!first)
+                    value_str += array_sep;
+                else
+                    first = false;
+                bool success = parse_str_arr(iter, single_sep, array_sep,escape_string_style, value_str);
+                if (!success)
+                    return false;
+            }
+            else if (iter.value().is_string()) {
+                if (!first)
+                    value_str += single_sep;
+                else
+                    first = false;
+                if (!escape_string_style)
+                    value_str += iter.value();
+                else {
+                    value_str += "\"";
+                    value_str += escape_string_cstyle(iter.value());
+                    value_str += "\"";
+                }
+            }
+            else {
+                //should not happen
+                return false;
+            }
+        }
+        return true;
+        };
+
     try {
         boost::nowide::ifstream ifs(file);
         ifs >> j;
+        ifs.close();
 
         const ConfigDef* config_def = this->def();
         if (config_def == nullptr) {
@@ -768,7 +870,7 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                 key_values.emplace(BBL_JSON_KEY_VERSION, it.value());
             }
             else if (boost::iequals(it.key(), BBL_JSON_KEY_IS_CUSTOM)) {
-                key_values.emplace(BBL_JSON_KEY_IS_CUSTOM, it.value());
+                //skip it
             }
             else if (boost::iequals(it.key(), BBL_JSON_KEY_NAME)) {
                 key_values.emplace(BBL_JSON_KEY_NAME, it.value());
@@ -790,13 +892,17 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
             else if (boost::iequals(it.key(), BBL_JSON_KEY_FROM)) {
                 key_values.emplace(BBL_JSON_KEY_FROM, it.value());
             }
+            else if (boost::iequals(it.key(), BBL_JSON_KEY_DESCRIPTION)) {
+                key_values.emplace(BBL_JSON_KEY_DESCRIPTION, it.value());
+            }
             else if (boost::iequals(it.key(), BBL_JSON_KEY_INSTANTIATION)) {
                 key_values.emplace(BBL_JSON_KEY_INSTANTIATION, it.value());
             }
             else if (!load_inherits_to_config && boost::iequals(it.key(), BBL_JSON_KEY_INHERITS)) {
                 key_values.emplace(BBL_JSON_KEY_INHERITS, it.value());
-            }
-            else {
+            } else if (boost::iequals(it.key(), ORCA_JSON_KEY_RENAMED_FROM)) {
+                key_values.emplace(ORCA_JSON_KEY_RENAMED_FROM, it.value());
+            } else {
                 t_config_option_key opt_key = it.key();
                 std::string value_str;
 
@@ -811,6 +917,16 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                             different_settings_append.push_back("support_style");
                             new_support_style = "tree_hybrid";
                         }
+                    } else if (opt_key == "wall_infill_order") {
+                        //BBS: check wall_infill order to decide if it be different and append to diff_setting_append
+                        if (it.value() == "outer wall/inner wall/infill" || it.value() == "infill/outer wall/inner wall" || it.value() == "inner-outer-inner wall/infill") {
+                            get_wall_sequence = "wall_seq_diff_to_system";
+                        }
+
+                        if (it.value() == "infill/outer wall/inner wall" || it.value() == "infill/inner wall/outer wall") {
+                            different_settings_append.push_back("is_infill_first");
+                            is_infill_first = "true";
+                        }
                     }
                 }
                 else if (it.value().is_array()) {
@@ -821,8 +937,7 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                         substitution_context.unrecogized_keys.push_back(opt_key_src);
                         continue;
                     }
-                    bool valid = true, first = true, use_comma = true;
-                    //bool test2 = (it.key() == std::string("filament_end_gcode"));
+                    bool valid = true, first = true;
                     const ConfigOptionDef* optdef = config_def->get(opt_key);
                     if (optdef == nullptr) {
                         // If we didn't find an option, look for any other option having this as an alias.
@@ -839,34 +954,29 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                         }
                     }
 
-                    if (optdef && optdef->type == coStrings) {
-                        use_comma = false;
-                    }
-                    for (auto iter = it.value().begin(); iter != it.value().end(); iter++) {
-                        if (iter.value().is_string()) {
-                            if (!first) {
-                                if (use_comma)
-                                    value_str += ",";
-                                else
-                                    value_str += ";";
-                            }
-                            else
-                                first = false;
-
-                            if (use_comma)
-                                value_str += iter.value();
-                            else {
-                                value_str += "\"";
-                                value_str += escape_string_cstyle(iter.value());
-                                value_str += "\"";
-                            }
-                        }
-                        else {
-                            //should not happen
-                            BOOST_LOG_TRIVIAL(error) << __FUNCTION__<< ": parse "<<file<<" error, invalid json array for " << it.key();
-                            valid = false;
+                    char single_sep = ',';
+                    char array_sep = '#';  // currenty not used
+                    bool escape_string_type = false;
+                    if (optdef) {
+                        switch (optdef->type)
+                        {
+                        case coStrings:
+                            escape_string_type = true;
+                            single_sep = ';';
+                            break;
+                        case coPointsGroups:
+                            single_sep = '#';
+                            break;
+                        default:
                             break;
                         }
+                    }
+
+                    // BBS: we only support 2 depth array
+                    valid = parse_str_arr(it, single_sep, array_sep,escape_string_type, value_str);
+                    if (!valid) {
+                        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ": parse " << file << " error, invalid json array for " << it.key();
+                        break;
                     }
                     if (valid)
                         this->set_deserialize(opt_key, value_str, substitution_context);
@@ -882,6 +992,12 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                 ConfigOptionEnum<SupportMaterialStyle>* opt = this->option<ConfigOptionEnum<SupportMaterialStyle>>("support_style", true);
                 opt->value = smsTreeHybrid;
             }
+
+            if (!is_infill_first.empty()) {
+                ConfigOptionBool *opt = this->option<ConfigOptionBool>("is_infill_first", true);
+                opt->value = true;
+            }
+
             if (is_project_settings) {
                 std::vector<std::string>& different_settings = this->option<ConfigOptionStrings>("different_settings_to_system", true)->values;
                 size_t size = different_settings.size();
@@ -898,6 +1014,25 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                         is_first[index] = true;
                     }
                     else {
+                        // remove unneeded key
+                        if (get_wall_sequence.empty()) {
+                            std::string wall_sqe_string = "wall_sequence";
+                            int pos=different_settings[index].find(wall_sqe_string);
+
+                            if (pos != different_settings[index].npos) {
+                                int erase_len = wall_sqe_string.size();
+                                if (pos + erase_len < different_settings[index].size() && different_settings[index][pos + erase_len] == ';')
+                                    erase_len++;
+                                different_settings[index].erase(pos, erase_len);
+                            }
+
+                        }
+
+                        if (different_settings[index].empty()) {
+                            is_first[index] = true;
+                            continue;
+                        }
+
                         Slic3r::unescape_strings_cstyle(different_settings[index], original_diffs[index]);
                     }
                 }
@@ -910,6 +1045,8 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                     if (diff_key == "support_type")
                         index = 0;
                     else if (diff_key == "support_style")
+                        index = 0;
+                    else if (diff_key == "is_infill_first")
                         index = 0;
 
                     //check whether exist firstly
@@ -933,6 +1070,10 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                 }
             }
         }
+        
+        // Do legacy conversion on a completely loaded dictionary.
+        // Perform composite conversions, for example merging multiple keys into one key.
+        this->handle_legacy_composite();
         return 0;
     }
     catch (const std::ifstream::failure &err)  {
@@ -1022,6 +1163,9 @@ ConfigSubstitutions ConfigBase::load(const boost::property_tree::ptree &tree, Fo
             // ignore
         }
     }
+    // Do legacy conversion on a completely loaded dictionary.
+    // Perform composite conversions, for example merging multiple keys into one key.
+    this->handle_legacy_composite();
     return std::move(substitutions_ctxt.substitutions);
 }
 
@@ -1108,7 +1252,10 @@ size_t ConfigBase::load_from_gcode_string_legacy(ConfigBase& config, const char*
         end = start;
     }
 
-    // BBS
+    // Do legacy conversion on a completely loaded dictionary.
+    // Perform composite conversions, for example merging multiple keys into one key.
+    config.handle_legacy_composite();
+
     free(result);
     return num_key_value_pairs;
 }
@@ -1190,11 +1337,10 @@ ConfigSubstitutions ConfigBase::load_from_gcode_file(const std::string &file, Fo
     bool has_delimiters = true;
     {
         //BBS
-        std::string bambuslicer_gcode_header = "; ";
-        bambuslicer_gcode_header += SLIC3R_APP_NAME;
+        std::string bambuslicer_gcode_header = "; OrcaSlicer";
 
         std::string orcaslicer_gcode_header = std::string("; generated by ");
-        orcaslicer_gcode_header += Slic3r::header_slic3r_generated();
+        orcaslicer_gcode_header += SLIC3R_APP_NAME;
 
         std::string header;
         bool        header_found = false;
@@ -1288,20 +1434,22 @@ ConfigSubstitutions ConfigBase::load_from_gcode_file(const std::string &file, Fo
         throw Slic3r::RuntimeError(format("Suspiciously low number of configuration values extracted from %1%: %2%", file, key_value_pairs));
     }
 
+    // Do legacy conversion on a completely loaded dictionary.
+    // Perform composite conversions, for example merging multiple keys into one key.
+    this->handle_legacy_composite();
+
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format(":  finished to parse_file %1%") % file.c_str();
     return std::move(substitutions_ctxt.substitutions);
 }
 
 //BBS: add json support
-void ConfigBase::save_to_json(const std::string &file, const std::string &name, const std::string &from, const std::string &version, const std::string is_custom) const
+void ConfigBase::save_to_json(const std::string &file, const std::string &name, const std::string &from, const std::string &version) const
 {
     json j;
     //record the headers
     j[BBL_JSON_KEY_VERSION] = version;
     j[BBL_JSON_KEY_NAME] = name;
     j[BBL_JSON_KEY_FROM] = from;
-    if (!is_custom.empty())
-        j[BBL_JSON_KEY_IS_CUSTOM] = is_custom;
 
     //record all the key-values
     for (const std::string &opt_key : this->keys())
@@ -1315,14 +1463,14 @@ void ConfigBase::save_to_json(const std::string &file, const std::string &name, 
                 j[opt_key] = opt->serialize();
         }
         else {
-            const ConfigOptionVectorBase *vec = static_cast<const ConfigOptionVectorBase*>(opt);
+            const ConfigOptionVectorBase* vec = static_cast<const ConfigOptionVectorBase*>(opt);
             //if (!vec->empty())
             std::vector<std::string> string_values = vec->vserialize();
 
             /*for (int i = 0; i < string_values.size(); i++)
             {
-                std::string string_value = escape_string_cstyle(string_values[i]);
-                j[opt_key][i] = string_value;
+            std::string string_value = escape_string_cstyle(string_values[i]);
+            j[opt_key][i] = string_value;
             }*/
 
             json j_array(string_values);
@@ -1553,6 +1701,81 @@ t_config_option_keys DynamicConfig::keys() const
     for (const auto &opt : this->options)
         keys.emplace_back(opt.first);
     return keys;
+}
+
+DynamicConfig::DynamicConfigDifference DynamicConfig::diff_report(const DynamicConfig& rhs) const {
+    DynamicConfig::DynamicConfigDifference result;
+
+    std::set<t_config_option_key> all_keys;
+
+    for (const auto& kvp : this->options) {
+	all_keys.insert(kvp.first);
+    }
+    for (const auto& kvp : rhs.options) {
+	all_keys.insert(kvp.first);
+    }
+
+    for (const auto& key : all_keys) {
+	auto left_it = this->options.find(key);
+	auto right_it = rhs.options.find(key);
+
+	bool left_has = (left_it != this->options.end());
+	bool right_has = (right_it != rhs.options.end());
+
+	if (left_has && right_has) {
+	    if (*left_it->second != *right_it->second) {
+		result.differences[key] = {
+		    left_it->second->serialize(),
+		    right_it->second->serialize()
+		};
+	    }
+	} else if (left_has) {
+	    result.differences[key] = {
+		left_it->second->serialize(),
+		std::nullopt
+	    };
+	} else if (right_has) {
+	    result.differences[key] = {
+		std::nullopt,
+		right_it->second->serialize()
+	    };
+	}
+    }
+    return result;
+}
+
+std::ostream& operator<<(std::ostream& os, const DynamicConfig::DynamicConfigDifference& diff) {
+    if (!diff.is_different()) {
+        os << "Configurations are identical.\n";
+        return os;
+    }
+
+    int missing_right=0, missing_left=0, differ=0;
+    os << "DynamicConfig Differences Found (" << diff.differences.size() << " keys):\n";
+    for (const auto& kvp : diff.differences) {
+        const auto& key = kvp.first;
+        const auto& detail = kvp.second;
+
+        os << "  Key: **" << key << "**\n";
+
+        if (detail.is_missing_key()) {
+            // Determine which side is missing the key
+            if (detail.left_value.has_value()) {
+                os << "    - **Missing in Right**: Key exists in left config. Value: " << detail.left_value.value() << "\n";
+		missing_right++;
+            } else {
+                os << "    - **Missing in Left**: Key exists in right config. Value: " << detail.right_value.value() << "\n";
+		missing_left++;
+            }
+        } else if (detail.is_different_value()) {
+	    differ++;
+            os << "    - **Value Differs**:\n";
+            os << "      -> Left Value:  " << detail.left_value.value() << "\n";
+            os << "      -> Right Value: " << detail.right_value.value() << "\n";
+        }
+    }
+    os << "Summary: " << missing_right << " missing on right, " << missing_left << " missing on left, and " << differ << " have differing values\n";
+    return os;
 }
 
 void StaticConfig::set_defaults()

@@ -3,13 +3,14 @@
 
 #include "wxExtensions.hpp"
 #include "GUI_Utils.hpp"
-#include "Widgets/RadioBox.hpp"
 #include "Widgets/Button.hpp"
 #include "Widgets/RoundedRectangle.hpp"
 #include "Widgets/Label.hpp"
 #include "Widgets/CheckBox.hpp"
 #include "Widgets/ComboBox.hpp"
 #include "Widgets/TextInput.hpp"
+#include "Widgets/LabeledStaticBox.hpp"
+#include "Widgets/RadioGroup.hpp"
 #include "GUI_App.hpp"
 #include "wx/hyperlink.h"
 #include <wx/radiobox.h>
@@ -25,6 +26,7 @@ public:
     void on_dpi_changed(const wxRect& suggested_rect) override;
 	void on_show(wxShowEvent& event);
 protected:
+    void reset_params();
 	virtual void on_start(wxCommandEvent& event);
 	virtual void on_extruder_type_changed(wxCommandEvent& event);
 	virtual void on_method_changed(wxCommandEvent& event);
@@ -34,13 +36,14 @@ protected:
 	Calib_Params m_params;
 
 
-	wxRadioBox* m_rbExtruderType;
-	wxRadioBox* m_rbMethod;
+	RadioGroup* m_rbExtruderType;
+	RadioGroup* m_rbMethod;
 	TextInput* m_tiStartPA;
 	TextInput* m_tiEndPA;
 	TextInput* m_tiPAStep;
 	CheckBox* m_cbPrintNum;
-	Button* m_btnStart;
+	TextInput* m_tiBMAccels;
+	TextInput* m_tiBMSpeeds;
 
 	Plater* m_plater;
 };
@@ -58,11 +61,10 @@ protected:
     virtual void on_filament_type_changed(wxCommandEvent& event);
     Calib_Params m_params;
 
-    wxRadioBox* m_rbFilamentType;
+    RadioGroup* m_rbFilamentType;
     TextInput* m_tiStart;
     TextInput* m_tiEnd;
     TextInput* m_tiStep;
-    Button* m_btnStart;
     Plater* m_plater;
 };
 
@@ -81,7 +83,6 @@ protected:
     TextInput* m_tiStart;
     TextInput* m_tiEnd;
     TextInput* m_tiStep;
-    Button* m_btnStart;
     Plater* m_plater;
 };
 
@@ -98,10 +99,86 @@ protected:
     TextInput* m_tiStart;
     TextInput* m_tiEnd;
     TextInput* m_tiStep;
-    Button* m_btnStart;
     Plater* m_plater;
 };
 
-}} // namespace Slic3r::GUI
 
+class Retraction_Test_Dlg : public DPIDialog
+{
+public:
+    Retraction_Test_Dlg (wxWindow* parent, wxWindowID id, Plater* plater);
+    ~Retraction_Test_Dlg ();
+    void on_dpi_changed(const wxRect& suggested_rect) override;
+
+protected:
+
+    virtual void on_start(wxCommandEvent& event);
+    Calib_Params m_params;
+
+    TextInput* m_tiStart;
+    TextInput* m_tiEnd;
+    TextInput* m_tiStep;
+    Plater* m_plater;
+};
+
+class Input_Shaping_Freq_Test_Dlg : public DPIDialog
+{
+public:
+    Input_Shaping_Freq_Test_Dlg (wxWindow* parent, wxWindowID id, Plater* plater);
+    ~Input_Shaping_Freq_Test_Dlg ();
+    void on_dpi_changed(const wxRect& suggested_rect) override;
+    
+protected:
+
+    virtual void on_start(wxCommandEvent& event);
+    Calib_Params m_params;
+
+    RadioGroup* m_rbModel;
+    RadioGroup* m_rbType;
+    TextInput* m_tiFreqStartX;
+    TextInput* m_tiFreqEndX;
+    TextInput* m_tiFreqStartY;
+    TextInput* m_tiFreqEndY;
+    TextInput* m_tiDampingFactor;
+    Plater* m_plater;
+};
+
+class Input_Shaping_Damp_Test_Dlg : public DPIDialog
+{
+public:
+    Input_Shaping_Damp_Test_Dlg (wxWindow* parent, wxWindowID id, Plater* plater);
+    ~Input_Shaping_Damp_Test_Dlg ();
+    void on_dpi_changed(const wxRect& suggested_rect) override;
+    
+protected:
+
+    virtual void on_start(wxCommandEvent& event);
+    Calib_Params m_params;
+
+    RadioGroup* m_rbModel;
+    RadioGroup* m_rbType;
+    TextInput* m_tiFreqX;
+    TextInput* m_tiFreqY;
+    TextInput* m_tiDampingFactorStart;
+    TextInput* m_tiDampingFactorEnd;
+    Plater* m_plater;
+};
+
+class Cornering_Test_Dlg : public DPIDialog
+{
+public:
+    Cornering_Test_Dlg(wxWindow* parent, wxWindowID id, Plater* plater);
+    ~Cornering_Test_Dlg();
+    void on_dpi_changed(const wxRect& suggested_rect) override;
+    
+protected:
+    virtual void on_start(wxCommandEvent& event);
+    Calib_Params m_params;
+
+    RadioGroup* m_rbModel;
+    TextInput* m_tiJDStart;
+    TextInput* m_tiJDEnd;
+    Plater* m_plater;
+};
+}} // namespace Slic3r::GUI
 #endif

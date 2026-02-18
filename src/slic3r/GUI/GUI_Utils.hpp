@@ -7,6 +7,7 @@
 #include <functional>
 
 #include <boost/optional.hpp>
+#include <boost/log/trivial.hpp>
 
 #include <wx/frame.h>
 #include <wx/dialog.h>
@@ -17,12 +18,13 @@
 #include <wx/dcclient.h>
 #include <wx/debug.h>
 #include <wx/settings.h>
+#include <wx/dataview.h>
+#include <wx/statbox.h>
 
 #include <chrono>
-
 #include "Event.hpp"
-#include "../libslic3r/libslic3r_version.h"
-#include "../libslic3r/Utils.hpp"
+#include "libslic3r/Utils.hpp"
+#include "libslic3r/Color.hpp"
 
 
 class wxCheckBox;
@@ -30,7 +32,8 @@ class wxTopLevelWindow;
 class wxRect;
 
 #define wxVERSION_EQUAL_OR_GREATER_THAN(major, minor, release) ((wxMAJOR_VERSION > major) || ((wxMAJOR_VERSION == major) && (wxMINOR_VERSION > minor)) || ((wxMAJOR_VERSION == major) && (wxMINOR_VERSION == minor) && (wxRELEASE_NUMBER >= release)))
-
+#define ICON_SINGLE_SIZE FromDIP(16)//don't change,if need new value,self create in cpp
+#define ICON_SIZE wxSize(FromDIP(16), FromDIP(16))//don't change,if need new value,self create in cpp
 namespace Slic3r {
 namespace GUI {
 
@@ -39,19 +42,10 @@ inline int hex_to_int(const char c)
     return (c >= '0' && c <= '9') ? int(c - '0') : (c >= 'A' && c <= 'F') ? int(c - 'A') + 10 : (c >= 'a' && c <= 'f') ? int(c - 'a') + 10 : -1;
 }
 
-static std::array<float, 4> decode_color_to_float_array(const std::string color)
+static ColorRGBA decode_color_to_float_array(const std::string color)
 {
-    // set alpha to 1.0f by default
-    std::array<float, 4> ret = {0, 0, 0, 1.0f};
-    const char *         c   = color.data() + 1;
-    if (color.size() == 7 && color.front() == '#') {
-        for (size_t j = 0; j < 3; ++j) {
-            int digit1 = hex_to_int(*c++);
-            int digit2 = hex_to_int(*c++);
-            if (digit1 == -1 || digit2 == -1) break;
-            ret[j] = float(digit1 * 16 + digit2) / 255.0f;
-        }
-    }
+    ColorRGBA ret = ColorRGBA::BLACK();
+    decode_color(color, ret);
     return ret;
 }
 
@@ -189,9 +183,12 @@ public:
 
         this->Bind(wxEVT_SYS_COLOUR_CHANGED, [this](wxSysColourChangedEvent& event)
         {
-            update_dark_config();
-            on_sys_color_changed();
-            event.Skip();
+#ifndef __WINDOWS__
+                update_dark_config();
+                on_sys_color_changed();
+                event.Skip();
+#endif // __WINDOWS__
+
         });
 
         if (std::is_same<wxDialog, P>::value) {
@@ -225,7 +222,7 @@ public:
         on_sys_color_changed();
     }
 #endif
-    
+
     int ShowModal()
     {
         dialogStack.push_front(this);
@@ -324,7 +321,26 @@ private:
 };
 
 typedef DPIAware<wxFrame> DPIFrame;
-typedef DPIAware<wxDialog> DPIDialog;
+class DPIDialog : public DPIAware<wxDialog>
+{
+public:
+    using DPIAware<wxDialog>::DPIAware;
+
+public:
+    void EndModal(int retCode) override
+    {
+        if (!dialogStack.empty() && dialogStack.front() != this) {
+            // This is a bug in wxWidgets
+            // when the dialog is not top modal dialog, EndModal() just hide dialog without quit 
+            // the modal event loop. And the modal event loop blocks us from bottom widgets.
+            // Solution: let user click it manually or close outside. FIXME
+            BOOST_LOG_TRIVIAL(warning) << "DPIAware::EndModal Error: dialogStack is not empty, but top dialog is not this one. retCode=" << retCode;
+            return;
+        }
+
+        return wxDialog::EndModal(retCode);
+    }
+};
 
 
 class EventGuard
@@ -476,6 +492,16 @@ public:
     ~TaskTimer();
 };
 
+class KeyAutoRepeatFilter
+{
+    size_t m_count{ 0 };
+
+public:
+    void increase_count() { ++m_count; }
+    void reset_count() { m_count = 0; }
+    bool is_first() const { return m_count == 0; }
+};
+
 
 /* Image Generator */
 #define _3MF_COVER_SIZE                  wxSize(240, 240)
@@ -486,6 +512,22 @@ public:
 
 bool load_image(const std::string& filename, wxImage &image);
 bool generate_image(const std::string &filename, wxImage &image, wxSize img_size, int method = GERNERATE_IMAGE_RESIZE);
+int get_dpi_for_window(const wxWindow *window);
+
+#ifdef __WXOSX__
+void dataview_remove_insets(wxDataViewCtrl* dv);
+void staticbox_remove_margin(wxStaticBox* sb);
+#endif
+
+#if defined(__WXOSX__) || defined(__linux__)
+bool is_debugger_present();
+#endif
+
+/// <summary>
+/// Make sure the given window fits inside current display
+/// </summary>
+void fit_in_display(wxTopLevelWindow& window, wxSize desired_size);
+
 
 }}
 

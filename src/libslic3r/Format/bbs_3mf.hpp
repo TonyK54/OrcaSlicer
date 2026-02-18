@@ -8,21 +8,31 @@
 
 namespace Slic3r {
 class Model;
+class ModelObject;
 struct ConfigSubstitutionContext;
 class DynamicPrintConfig;
 class Preset;
 struct FilamentInfo;
 struct ThumbnailData;
 
+
+#define PLATE_THUMBNAIL_SMALL_WIDTH     128
+#define PLATE_THUMBNAIL_SMALL_HEIGHT    128
+
 #define GCODE_FILE_FORMAT               "Metadata/plate_%1%.gcode"
 #define THUMBNAIL_FILE_FORMAT           "Metadata/plate_%1%.png"
-#define PATTERN_FILE_FORMAT             "Metadata/plate_%1%_pattern_layer_0.png"
+#define NO_LIGHT_THUMBNAIL_FILE_FORMAT  "Metadata/plate_no_light_%1%.png"
+#define TOP_FILE_FORMAT                 "Metadata/top_%1%.png"
+#define PICK_FILE_FORMAT                "Metadata/pick_%1%.png"
+//#define PATTERN_FILE_FORMAT             "Metadata/plate_%1%_pattern_layer_0.png"
 #define PATTERN_CONFIG_FILE_FORMAT      "Metadata/plate_%1%.json"
 #define EMBEDDED_PRINT_FILE_FORMAT      "Metadata/process_settings_%1%.config"
 #define EMBEDDED_FILAMENT_FILE_FORMAT      "Metadata/filament_settings_%1%.config"
 #define EMBEDDED_PRINTER_FILE_FORMAT      "Metadata/machine_settings_%1%.config"
 
+#define BBL_DESIGNER_MODEL_TITLE_TAG     "Title"
 #define BBL_DESIGNER_PROFILE_ID_TAG      "DesignProfileId"
+#define BBL_DESIGNER_PROFILE_TITLE_TAG   "ProfileTitle"
 #define BBL_DESIGNER_MODEL_ID_TAG        "DesignModelId"
 
 
@@ -61,21 +71,40 @@ struct PlateData
     int plate_index;
     std::vector<std::pair<int, int>> objects_and_instances;
     std::map<int, std::pair<int, int>> obj_inst_map;
+    std::string     printer_model_id;
+    std::string     nozzle_diameters;
     std::string     gcode_file;
     std::string     gcode_file_md5;
     std::string     thumbnail_file;
+    std::string     no_light_thumbnail_file;
     ThumbnailData   plate_thumbnail;
-    ThumbnailData   pattern_thumbnail;
-    std::string     pattern_file;
+    std::string     top_file;
+    std::string     pick_file;
+    //ThumbnailData   pattern_thumbnail;
+    //std::string     pattern_file;
     std::string     pattern_bbox_file;
     std::string     gcode_prediction;
     std::string     gcode_weight;
+    std::string     first_layer_time;
     std::string     plate_name;
     std::vector<FilamentInfo> slice_filaments_info;
+    std::vector<size_t> skipped_objects;
     DynamicPrintConfig config;
     bool            is_support_used {false};
     bool            is_sliced_valid = false;
     bool            toolpath_outside {false};
+    bool            is_label_object_enabled {false};
+    int             timelapse_warning_code = 0; // 1<<0 sprial vase, 1<<1 by object
+    std::vector<int>          filament_maps;   // 1 base
+    using LayerFilaments = std::unordered_map<std::vector<unsigned int>, std::vector<std::pair<int, int>>, GCodeProcessorResult::FilamentSequenceHash>;
+    LayerFilaments layer_filaments;
+
+    // Hexadecimal number,
+    // the 0th digit corresponds to extruder 1
+    // the 1th digit corresponds to extruder 2
+    // ...  and so on.
+    // 0 means can be print on this extruder, 1 means cannot
+    std::vector<int>          limit_filament_maps;
 
     std::vector<GCodeProcessorResult::SliceWarning> warnings;
 
@@ -103,6 +132,8 @@ enum class SaveStrategy
     SkipModel           = 1 << 7,
     WithSliceInfo       = 1 << 8,
     SkipAuxiliary       = 1 << 9,
+    UseLoadedId         = 1 << 10,
+    ShareMesh           = 1 << 11,
 
     SplitModel = 0x1000 | ProductionExt,
     Encrypted  = SecureContentExt | SplitModel,
@@ -120,6 +151,10 @@ inline bool operator & (SaveStrategy & lhs, SaveStrategy rhs)
     using T = std::underlying_type_t <SaveStrategy>;
     return ((static_cast<T>(lhs) & static_cast<T>(rhs))) == static_cast<T>(rhs);
 }
+
+enum {
+    brim_points_format_version = 0
+};
 
 enum class LoadStrategy
 {
@@ -195,6 +230,9 @@ struct StoreParams
     std::vector<Preset*> project_presets;
     DynamicPrintConfig* config;
     std::vector<ThumbnailData*> thumbnail_data;
+    std::vector<ThumbnailData*> no_light_thumbnail_data;
+    std::vector<ThumbnailData*> top_thumbnail_data;
+    std::vector<ThumbnailData*> pick_thumbnail_data;
     std::vector<ThumbnailData*> calibration_thumbnail_data;
     SaveStrategy strategy = SaveStrategy::Zip64;
     Export3mfProgressFn proFn = nullptr;
@@ -213,6 +251,10 @@ extern bool load_bbs_3mf(const char* path, DynamicPrintConfig* config, ConfigSub
         bool* is_bbl_3mf, Semver* file_version, Import3mfProgressFn proFn = nullptr, LoadStrategy strategy = LoadStrategy::Default, BBLProject *project = nullptr, int plate_id = 0);
 
 extern std::string bbs_3mf_get_thumbnail(const char * path);
+
+extern bool load_gcode_3mf_from_stream(std::istream & data, DynamicPrintConfig* config, Model* model, PlateDataPtrs* plate_data_list,
+       Semver* file_version);
+
 
 //BBS: add plate data list related logic
 // add backup logic

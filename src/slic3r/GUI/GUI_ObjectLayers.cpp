@@ -8,6 +8,8 @@
 #include "GLCanvas3D.hpp"
 #include "Plater.hpp"
 
+#include "Widgets/LabeledStaticBox.hpp"
+
 #include <boost/algorithm/string.hpp>
 
 #include "I18N.hpp"
@@ -22,29 +24,24 @@ namespace GUI
 ObjectLayers::ObjectLayers(wxWindow* parent) :
     OG_Settings(parent, true)
 {
-    m_grid_sizer = new wxFlexGridSizer(3, 5, wxGetApp().em_unit()); // "Min Z", "Max Z", "Layer height" & buttons sizer
+    m_grid_sizer = new wxFlexGridSizer(5, 0, wxGetApp().em_unit()); // Title, Min Z, "to", Max Z, unit & buttons sizer
     m_grid_sizer->SetFlexibleDirection(wxHORIZONTAL);
-
-    // Legend for object layers
-    for (const std::string col : { L("From height"), L("To height"), L("Layer height") }) {
-        auto temp = new wxStaticText(m_parent, wxID_ANY, _(col), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_MIDDLE);
-        temp->SetBackgroundStyle(wxBG_STYLE_PAINT);
-        temp->SetFont(wxGetApp().bold_font());
-
-        m_grid_sizer->Add(temp);
-    }
+    m_grid_sizer->AddGrowableCol(1);
+    m_grid_sizer->AddGrowableCol(3);
 
     m_og->activate();
     m_og->sizer->Clear(true);
-    m_og->sizer->Add(m_grid_sizer, 0, wxEXPAND | wxALL, wxOSX ? 0 : 5);
+    m_og->sizer->Add(m_grid_sizer, 0, wxEXPAND | wxLEFT | wxRIGHT, 5);
+    if (auto stb = dynamic_cast<LabeledStaticBox*>(m_og->stb))
+        stb->SetCornerRadius(0);
 
-    m_bmp_delete    = ScalableBitmap(parent, "remove_copies"/*"cross"*/);
-    m_bmp_add       = ScalableBitmap(parent, "add_copies");
+    m_bmp_delete    = ScalableBitmap(parent, "delete");
+    m_bmp_add       = ScalableBitmap(parent, "add");
 }
 
 void ObjectLayers::select_editor(LayerRangeEditor* editor, const bool is_last_edited_range)
 {
-    if (is_last_edited_range && m_selection_type == editor->type()) {
+    //if (is_last_edited_range && m_selection_type == editor->type()) {
     /* Workaround! Under OSX we should use CallAfter() for SetFocus() after LayerEditors "reorganizations", 
      * because of selected control's strange behavior: 
      * cursor is set to the control, but blue border - doesn't.
@@ -53,12 +50,12 @@ void ObjectLayers::select_editor(LayerRangeEditor* editor, const bool is_last_ed
 #ifdef __WXOSX__
         wxTheApp->CallAfter([editor]() {
 #endif
-        editor->SetFocus();
-        editor->SetInsertionPointEnd();
+        //editor->SetFocus();
+        //editor->SelectAll();
 #ifdef __WXOSX__
         });
 #endif
-    }    
+    //}    
 }
 
 wxSizer* ObjectLayers::create_layer(const t_layer_height_range& range, PlusMinusButton *delete_button, PlusMinusButton *add_button) 
@@ -79,6 +76,12 @@ wxSizer* ObjectLayers::create_layer(const t_layer_height_range& range, PlusMinus
         if (enter_pressed)
             m_selection_type = type;
     };
+
+    // Add text
+    auto head_text = new wxStaticText(m_og->ctrl_parent(), wxID_ANY, _L("Height Range"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    head_text->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    head_text->SetFont(wxGetApp().normal_font());
+    m_grid_sizer->Add(head_text, 0, wxALIGN_CENTER_VERTICAL);
 
     // Add control for the "Min Z"
 
@@ -103,7 +106,13 @@ wxSizer* ObjectLayers::create_layer(const t_layer_height_range& range, PlusMinus
     });
 
     select_editor(editor, is_last_edited_range);
-    m_grid_sizer->Add(editor);
+
+    m_grid_sizer->Add(editor, 1, wxEXPAND);
+
+    auto middle_text = new wxStaticText(m_og->ctrl_parent(), wxID_ANY, _L("to"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    middle_text->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    middle_text->SetFont(wxGetApp().normal_font());
+    m_grid_sizer->Add(middle_text, 0, wxALIGN_CENTER_VERTICAL);
 
     // Add control for the "Max Z"
 
@@ -126,47 +135,62 @@ wxSizer* ObjectLayers::create_layer(const t_layer_height_range& range, PlusMinus
         return wxGetApp().obj_list()->edit_layer_range(range, new_range, dont_update_ui);
     });
 
-    select_editor(editor, is_last_edited_range);
-    m_grid_sizer->Add(editor);
+    //select_editor(editor, is_last_edited_range);
+    m_grid_sizer->Add(editor, 1, wxEXPAND);
 
+    auto sizer2 = new wxBoxSizer(wxHORIZONTAL);
+    auto unit_text = new wxStaticText(m_og->ctrl_parent(), wxID_ANY, _L("mm"), wxDefaultPosition, wxDefaultSize, wxST_ELLIPSIZE_END);
+    unit_text->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    unit_text->SetFont(wxGetApp().normal_font());
+    sizer2->Add(unit_text, 0, wxALIGN_CENTER_VERTICAL);
+
+    m_grid_sizer->Add(sizer2, 0, wxALIGN_CENTER_VERTICAL);
+
+    // BBS
     // Add control for the "Layer height"
 
-    editor = new LayerRangeEditor(this, double_to_string(m_object->layer_config_ranges[range].option("layer_height")->getFloat()), etLayerHeight, set_focus_data,
-        [range](coordf_t layer_height, bool, bool)
-    {
-        return wxGetApp().obj_list()->edit_layer_range(range, layer_height);
-    });
+    //editor = new LayerRangeEditor(this, double_to_string(m_object->layer_config_ranges[range].option("layer_height")->getFloat()), etLayerHeight, set_focus_data,
+    //    [range](coordf_t layer_height, bool, bool)
+    //{
+    //    return wxGetApp().obj_list()->edit_layer_range(range, layer_height);
+    //});
 
-    select_editor(editor, is_last_edited_range);
+    //select_editor(editor, is_last_edited_range);
 
-    auto sizer = new wxBoxSizer(wxHORIZONTAL);
-    sizer->Add(editor);
+    //auto sizer = new wxBoxSizer(wxHORIZONTAL);
+    //sizer->Add(editor);
 
-    auto temp = new wxStaticText(m_parent, wxID_ANY, _L("mm"));
-    temp->SetBackgroundStyle(wxBG_STYLE_PAINT);
-    temp->SetFont(wxGetApp().normal_font());
-    sizer->Add(temp, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, wxGetApp().em_unit());
+    //auto temp = new wxStaticText(m_parent, wxID_ANY, _L("mm"));
+    //temp->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    //temp->SetFont(wxGetApp().normal_font());
+    //sizer->Add(temp, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, wxGetApp().em_unit());
 
-    m_grid_sizer->Add(sizer);
+    //m_grid_sizer->Add(sizer);
 
-    return sizer;
+    return sizer2;
 }
     
 void ObjectLayers::create_layers_list()
 {
     for (const auto &layer : m_object->layer_config_ranges) {
         const t_layer_height_range& range = layer.first;
-        auto del_btn = new PlusMinusButton(m_parent, m_bmp_delete, range);
+        auto del_btn = new PlusMinusButton(m_og->ctrl_parent(), m_bmp_delete, range); 
+        del_btn->DisableFocusFromKeyboard();
+        del_btn->SetBackgroundColour(m_parent->GetBackgroundColour());
         del_btn->SetToolTip(_L("Remove height range"));
 
-        auto add_btn = new PlusMinusButton(m_parent, m_bmp_add, range);
+        auto add_btn = new PlusMinusButton(m_og->ctrl_parent(), m_bmp_add, range); 
+        add_btn->DisableFocusFromKeyboard();
+        add_btn->SetBackgroundColour(m_parent->GetBackgroundColour());
         wxString tooltip = wxGetApp().obj_list()->can_add_new_range_after_current(range);
         add_btn->SetToolTip(tooltip.IsEmpty() ? _L("Add height range") : tooltip);
         add_btn->Enable(tooltip.IsEmpty());
 
         auto sizer = create_layer(range, del_btn, add_btn);
-        sizer->Add(del_btn, 0, wxRIGHT | wxLEFT, em_unit(m_parent));
-        sizer->Add(add_btn);
+        auto b_sizer = new wxBoxSizer(wxHORIZONTAL);
+        b_sizer->Add(del_btn, 0, wxRIGHT | wxLEFT, em_unit(m_parent));
+        b_sizer->Add(add_btn);
+        sizer->Add(b_sizer, 0, wxALIGN_CENTER_HORIZONTAL | wxTOP, m_parent->FromDIP(1)); // aligns +/- buttons vertically since we got 1px gap on bottom of icons
 
         del_btn->Bind(wxEVT_BUTTON, [del_btn](wxEvent &) {
             wxGetApp().obj_list()->del_layer_range(del_btn->range);
@@ -195,27 +219,27 @@ void ObjectLayers::update_layers_list()
     m_object = objects_ctrl->object(obj_idx);
     if (!m_object || m_object->layer_config_ranges.empty()) return;
 
-    // Delete all controls from options group except of the legends
+    auto range = objects_ctrl->GetModel()->GetLayerRangeByItem(item);
 
-    const int cols = m_grid_sizer->GetEffectiveColsCount();
-    const int rows = m_grid_sizer->GetEffectiveRowsCount();
-    for (int idx = cols*rows-1; idx >= cols; idx--) {
-        wxSizerItem* t = m_grid_sizer->GetItem(idx);
-        if (t->IsSizer())
-            t->GetSizer()->Clear(true);
+    // only call sizer->Clear(true) via CallAfter, otherwise crash happens in Linux when press enter in Height Range
+    // because an element cannot be destroyed while there are pending events for this element.(https://github.com/wxWidgets/Phoenix/issues/1854)
+    wxGetApp().CallAfter([this, type, objects_ctrl, range]() {
+        m_og->ctrl_parent()->Freeze();
+
+        // Delete all controls from options group
+        m_grid_sizer->Clear(true);
+
+        // Add new control according to the selected item  
+
+        if (type & itLayerRoot)
+            create_layers_list();
         else
-            t->DeleteWindows();
-        m_grid_sizer->Remove(idx);
-    }
+            create_layer(range, nullptr, nullptr);
 
-    // Add new control according to the selected item  
+        m_og->ctrl_parent()->Thaw();
 
-    if (type & itLayerRoot)
-        create_layers_list();
-    else
-        create_layer(objects_ctrl->GetModel()->GetLayerRangeByItem(item), nullptr, nullptr);
-
-    m_parent->Layout();
+        m_parent->Layout();
+    });
 }
 
 void ObjectLayers::update_scene_from_editor_selection() const
@@ -283,7 +307,7 @@ void ObjectLayers::sys_color_changed()
         if (item->IsSizer()) {// case when we have editor with buttons
             for (size_t btn : {2, 3}) { // del_btn, add_btn
                 wxSizerItem* b_item = item->GetSizer()->GetItem(btn);
-                if (b_item->IsWindow()) {
+                if (b_item && b_item->IsWindow()) {
                     auto button = dynamic_cast<PlusMinusButton*>(b_item->GetWindow());
                     if (button != nullptr)
                         button->msw_rescale();
@@ -326,8 +350,8 @@ LayerRangeEditor::LayerRangeEditor( ObjectLayers* parent,
     m_valid_value(value),
     m_type(type),
     m_set_focus_data(set_focus_data_fn),
-    wxTextCtrl(parent->m_parent, wxID_ANY, value, wxDefaultPosition, 
-               wxSize(8 * em_unit(parent->m_parent), wxDefaultCoord), wxTE_PROCESS_ENTER
+    wxTextCtrl(parent->m_og->ctrl_parent(), wxID_ANY, value, wxDefaultPosition, 
+               wxSize(em_unit(parent->m_parent), wxDefaultCoord), wxTE_PROCESS_ENTER
 #ifdef _WIN32
         | wxBORDER_SIMPLE
 #endif
@@ -427,7 +451,7 @@ coordf_t LayerRangeEditor::get_value()
     else {
         if (!str.ToDouble(&layer_height) || layer_height < 0.0f) {
             show_error(m_parent, _L("Invalid numeric."));
-            SetValue(double_to_string(layer_height));
+            SetValue(m_valid_value); // reset to a valid value
         }
     }
 
@@ -436,7 +460,7 @@ coordf_t LayerRangeEditor::get_value()
 
 void LayerRangeEditor::msw_rescale()
 {
-    SetMinSize(wxSize(8 * wxGetApp().em_unit(), wxDefaultCoord));
+    SetMinSize(wxSize(wxGetApp().em_unit(), wxDefaultCoord));
 }
 
 } //namespace GUI

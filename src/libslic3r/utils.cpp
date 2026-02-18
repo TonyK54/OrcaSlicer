@@ -6,7 +6,9 @@
 #include <ctime>
 #include <cstdarg>
 #include <stdio.h>
+#include <filesystem>
 
+#include "format.hpp"
 #include "Platform.hpp"
 #include "Time.hpp"
 #include "libslic3r.h"
@@ -37,6 +39,7 @@
 		#include <fcntl.h>
 		#include <sys/sendfile.h>
 		#include <dirent.h>
+		#include <stdio.h>
 	#endif
 #endif
 
@@ -54,6 +57,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/nowide/convert.hpp>
 #include <boost/nowide/cstdio.hpp>
@@ -162,7 +166,7 @@ boost::shared_ptr<boost::log::sinks::synchronous_sink<boost::log::sinks::text_fi
 // to perform unit and integration tests.
 static struct RunOnInit {
     RunOnInit() {
-        set_logging_level(1);
+        set_logging_level(2);
 
     }
 } g_RunOnInit;
@@ -200,6 +204,11 @@ const std::string& var_dir()
 
 std::string var(const std::string &file_name)
 {
+    boost::system::error_code ec;
+    if (boost::filesystem::exists(file_name, ec)) {
+       return file_name;
+    }
+
     auto file = (boost::filesystem::path(g_var_dir) / file_name).make_preferred();
     return file.string();
 }
@@ -252,6 +261,18 @@ const std::string& sys_shapes_dir()
 	return g_sys_shapes_dir;
 }
 
+static std::string g_custom_gcodes_dir;
+
+void set_custom_gcodes_dir(const std::string &dir)
+{
+    g_custom_gcodes_dir = dir;
+}
+
+const std::string& custom_gcodes_dir()
+{
+    return g_custom_gcodes_dir;
+}
+
 // Translate function callback, to call wxWidgets translate function to convert non-localized UTF8 string to a localized one.
 Slic3r::I18N::translate_fn_type Slic3r::I18N::translate_fn = nullptr;
 static std::string g_data_dir;
@@ -259,6 +280,9 @@ static std::string g_data_dir;
 void set_data_dir(const std::string &dir)
 {
     g_data_dir = dir;
+    if (!g_data_dir.empty() && !boost::filesystem::exists(g_data_dir)) {
+       boost::filesystem::create_directory(g_data_dir);
+    }
 }
 
 const std::string& data_dir()
@@ -271,13 +295,22 @@ std::string custom_shapes_dir()
     return (boost::filesystem::path(g_data_dir) / "shapes").string();
 }
 
+std::string handy_models_dir()
+{
+    return (boost::filesystem::path(resources_dir()) / "handy_models").string();
+}
+
 static std::atomic<bool> debug_out_path_called(false);
 
 std::string debug_out_path(const char *name, ...)
 {
-	static constexpr const char *SLIC3R_DEBUG_OUT_PATH_PREFIX = "out/";
+	//static constexpr const char *SLIC3R_DEBUG_OUT_PATH_PREFIX = "out/";
+	auto svg_folder = boost::filesystem::path(g_data_dir) / "SVG/";
     if (! debug_out_path_called.exchange(true)) {
-		std::string path = boost::filesystem::system_complete(SLIC3R_DEBUG_OUT_PATH_PREFIX).string();
+		if (!boost::filesystem::exists(svg_folder)) {
+			boost::filesystem::create_directory(svg_folder);
+		}
+		std::string path = boost::filesystem::system_complete(svg_folder).string();
         printf("Debugging output files will be written to %s\n", path.c_str());
     }
 	char buffer[2048];
@@ -285,7 +318,13 @@ std::string debug_out_path(const char *name, ...)
 	va_start(args, name);
 	std::vsprintf(buffer, name, args);
 	va_end(args);
-	return std::string(SLIC3R_DEBUG_OUT_PATH_PREFIX) + std::string(buffer);
+
+	std::string buf(buffer);
+	if (size_t pos = buf.find_first_of('/'); pos != std::string::npos) {
+		std::string sub_dir = buf.substr(0, pos);
+		std::filesystem::create_directory(svg_folder.string() + sub_dir);
+	}
+	return svg_folder.string() + std::string(buffer);
 }
 
 namespace logging = boost::log;
@@ -303,7 +342,7 @@ void set_log_path_and_level(const std::string& file, unsigned int level)
 	}
 #endif
 
-	//BBS log file at C:\\Users\\[yourname]\\AppData\\Roaming\\BambuStudio\\log\\[log_filename].log
+	//BBS log file at C:\\Users\\[yourname]\\AppData\\Roaming\\OrcaSlicer\\log\\[log_filename].log
 	auto log_folder = boost::filesystem::path(g_data_dir) / "log";
 	if (!boost::filesystem::exists(log_folder)) {
 		boost::filesystem::create_directory(log_folder);
@@ -316,10 +355,12 @@ void set_log_path_and_level(const std::string& file, unsigned int level)
 		keywords::format =
 		(
 			expr::stream
+			<< "[" << expr::attr< logging::trivial::severity_level >("Severity") << "]\t"
 			<< expr::format_date_time< boost::posix_time::ptime >("TimeStamp", "%Y-%m-%d %H:%M:%S.%f")
 			<<"[Thread " << expr::attr<attrs::current_thread_id::value_type>("ThreadID") << "]"
 			<< ":" << expr::smessage
-			)
+		),
+		keywords::auto_flush = true
 	);
 
 	logging::add_common_attributes();
@@ -844,50 +885,8 @@ CopyFileResult copy_file(const std::string &from, const std::string &to, std::st
     ::MultiByteToWideChar(CP_UTF8, NULL, dest_str, strlen(dest_str), dst_wstr, dst_wlen);
     dst_wstr[dst_wlen] = '\0';
 
-    BOOL result;
-    char* buff = nullptr;
-    HANDLE handlesrc = nullptr;
-    HANDLE handledst = nullptr;
     CopyFileResult ret = SUCCESS;
-
-    handlesrc = CreateFile(src_wstr,
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_TEMPORARY,
-        0);
-    if(handlesrc==INVALID_HANDLE_VALUE){
-        error_message = "Error: open src file";
-        ret = FAIL_COPY_FILE;
-        goto __finished;
-    }
-
-    handledst=CreateFile(dst_wstr,
-        GENERIC_WRITE,
-        FILE_SHARE_READ,
-        NULL,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_TEMPORARY,
-        0);
-    if(handledst==INVALID_HANDLE_VALUE){
-        error_message = "Error: create dest file";
-        ret = FAIL_COPY_FILE;
-        goto __finished;
-    }
-
-    DWORD size=GetFileSize(handlesrc,NULL);
-    buff = new char[size+1];
-    DWORD dwRead=0,dwWrite;
-    result = ReadFile(handlesrc, buff, size, &dwRead, NULL);
-    if (!result) {
-        DWORD errCode = GetLastError();
-        error_message = "Error: " + errCode;
-        ret = FAIL_COPY_FILE;
-        goto __finished;
-    }
-    buff[size]=0;
-    result = WriteFile(handledst,buff,size,&dwWrite,NULL);
+    BOOL result = CopyFileW(src_wstr, dst_wstr, FALSE);
     if (!result) {
         DWORD errCode = GetLastError();
         error_message = "Error: " + errCode;
@@ -900,12 +899,6 @@ __finished:
         delete[] src_wstr;
     if (dst_wstr)
         delete[] dst_wstr;
-    if (handlesrc)
-        CloseHandle(handlesrc);
-    if (handledst)
-        CloseHandle(handledst);
-    if (buff)
-        delete[] buff;
 
     return ret;
 #else
@@ -921,6 +914,34 @@ __finished:
     }
     return ret_val;
 #endif
+}
+
+bool copy_framework(const std::string &from, const std::string &to)
+{
+    boost::filesystem::path src(from), dst(to);
+    try {
+        if (!boost::filesystem::is_directory(src)) {
+            std::cerr << "Error: Source is not a directory: " << src << std::endl;
+            return false;
+        }
+        boost::filesystem::create_directories(dst);
+        for (boost::filesystem::directory_iterator it(src); it != boost::filesystem::directory_iterator(); ++it) {
+            const auto &entry     = it->path();
+            const auto  dest_path = dst / entry.filename();
+
+            if (boost::filesystem::is_symlink(entry)) {
+                boost::filesystem::copy_symlink(entry, dest_path);
+            } else if (boost::filesystem::is_directory(entry)) {
+                copy_framework(it->path().string(), dest_path.string());
+            } else {
+                boost::filesystem::copy(entry, dest_path, boost::filesystem::copy_options::overwrite_existing);
+            }
+        }
+        return true;
+    } catch (const boost::filesystem::filesystem_error &e) {
+        BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << "Filesystem error: " << e.what();
+    }
+    return false;
 }
 
 CopyFileResult check_copy(const std::string &origin, const std::string &copy)
@@ -1012,7 +1033,7 @@ bool is_gallery_file(const std::string &path, char const* type)
 
 bool is_shapes_dir(const std::string& dir)
 {
-	return dir == sys_shapes_dir() || dir == custom_shapes_dir();
+	return dir == sys_shapes_dir() || dir == custom_shapes_dir() || dir == handy_models_dir();
 }
 
 } // namespace Slic3r
@@ -1025,6 +1046,76 @@ bool is_shapes_dir(const std::string& dir)
 #endif /* WIN32 */
 
 namespace Slic3r {
+
+size_t get_utf8_sequence_length(const std::string& text, size_t pos)
+{
+	assert(pos < text.size());
+	return get_utf8_sequence_length(text.c_str() + pos, text.size() - pos);
+}
+
+size_t get_utf8_sequence_length(const char *seq, size_t size)
+{
+	size_t length = 0;
+	unsigned char c = seq[0];
+	if (c < 0x80) { // 0x00-0x7F
+		// is ASCII letter
+		length++;
+	}
+	// Bytes 0x80 to 0xBD are trailer bytes in a multibyte sequence.
+	// pos is in the middle of a utf-8 sequence. Add the utf-8 trailer bytes.
+	else if (c < 0xC0) { // 0x80-0xBF
+		length++;
+		while (length < size) {
+			c = seq[length];
+			if (c < 0x80 || c >= 0xC0) {
+				break; // prevent overrun
+			}
+			length++; // add a utf-8 trailer byte
+		}
+	}
+	// Bytes 0xC0 to 0xFD are header bytes in a multibyte sequence.
+	// The number of one bits above the topmost zero bit indicates the number of bytes (including this one) in the whole sequence.
+	else if (c < 0xE0) { // 0xC0-0xDF
+	 // add a utf-8 sequence (2 bytes)
+		if (2 > size) {
+			return size; // prevent overrun
+		}
+		length += 2;
+	}
+	else if (c < 0xF0) { // 0xE0-0xEF
+	 // add a utf-8 sequence (3 bytes)
+		if (3 > size) {
+			return size; // prevent overrun
+		}
+		length += 3;
+	}
+	else if (c < 0xF8) { // 0xF0-0xF7
+	 // add a utf-8 sequence (4 bytes)
+		if (4 > size) {
+			return size; // prevent overrun
+		}
+		length += 4;
+	}
+	else if (c < 0xFC) { // 0xF8-0xFB
+	 // add a utf-8 sequence (5 bytes)
+		if (5 > size) {
+			return size; // prevent overrun
+		}
+		length += 5;
+	}
+	else if (c < 0xFE) { // 0xFC-0xFD
+	 // add a utf-8 sequence (6 bytes)
+		if (6 > size) {
+			return size; // prevent overrun
+		}
+		length += 6;
+	}
+	else { // 0xFE-0xFF
+	 // not a utf-8 sequence
+		length++;
+	}
+	return length;
+}
 
 // Encode an UTF-8 string to the local code page.
 std::string encode_path(const char *src)
@@ -1067,6 +1158,18 @@ std::string normalize_utf8_nfc(const char *src)
 {
     static std::locale locale_utf8(boost::locale::generator().generate(""));
     return boost::locale::normalize(src, boost::locale::norm_nfc, locale_utf8);
+}
+
+std::vector<std::string> split_string(const std::string &str, char delimiter)
+{
+    std::vector<std::string> result;
+    std::stringstream ss(str);
+    std::string substr;
+
+    while (std::getline(ss, substr, delimiter)) {
+        result.push_back(substr);
+    }
+    return result;
 }
 
 namespace PerlUtils {
@@ -1149,7 +1252,16 @@ std::string get_process_name(int pid)
 	while (auto q = strchr(p + 1, '/')) p = q;
 	return p;
 #else
-	return {};
+    char pathbuf[512]  = {0};
+    char proc_path[32] = "/proc/self/exe";
+    if (pid != 0) { snprintf(proc_path, sizeof(proc_path), "/proc/%d/exe", pid); }
+    if (readlink(proc_path, pathbuf, sizeof(pathbuf)) < 0) {
+        perror(NULL);
+        return {};
+    }
+    char *p = pathbuf;
+    while (auto q = strchr(p + 1, '/')) p = q;
+    return p;
 #endif
 }
 
@@ -1171,6 +1283,34 @@ std::string xml_escape(std::string text, bool is_marked/* = false*/)
         case '&':  replacement = "&amp;";  break;
         case '<':  replacement = is_marked ? "<" :"&lt;"; break;
         case '>':  replacement = is_marked ? ">" :"&gt;"; break;
+        default: break;
+        }
+
+        text.replace(pos, 1, replacement);
+        pos += replacement.size();
+    }
+
+    return text;
+}
+
+// Definition of escape symbols https://www.w3.org/TR/REC-xml/#AVNormalize
+// During the read of xml attribute normalization of white spaces is applied
+// Soo for not lose white space character it is escaped before store
+std::string xml_escape_double_quotes_attribute_value(std::string text)
+{
+    std::string::size_type pos = 0;
+    for (;;) {
+        pos = text.find_first_of("\"&<\r\n\t", pos);
+        if (pos == std::string::npos) break;
+
+        std::string replacement;
+        switch (text[pos]) {
+        case '\"': replacement = "&quot;"; break;
+        case '&': replacement = "&amp;"; break;
+        case '<': replacement = "&lt;"; break;
+        case '\r': replacement = "&#xD;"; break;
+        case '\n': replacement = "&#xA;"; break;
+        case '\t': replacement = "&#x9;"; break;
         default: break;
         }
 
@@ -1241,6 +1381,42 @@ std::string format_memsize_MB(size_t n)
         out += buf;
     }
     return out + "MB";
+}
+
+std::string format_memsize(size_t bytes, unsigned int decimals)
+{
+		static constexpr const float kb = 1024.0f;
+		static constexpr const float mb = 1024.0f * kb;
+		static constexpr const float gb = 1024.0f * mb;
+		static constexpr const float tb = 1024.0f * gb;
+
+		const float f_bytes = static_cast<float>(bytes);
+		if (f_bytes < kb)
+				return std::to_string(bytes) + " bytes";
+		else if (f_bytes < mb) {
+				const float f_kb = f_bytes / kb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_kb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "KB)";
+		}
+		else if (f_bytes < gb) {
+				const float f_mb = f_bytes / mb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_mb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "MB)";
+		}
+		else if (f_bytes < tb) {
+				const float f_gb = f_bytes / gb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_gb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "GB)";
+		}
+		else {
+				const float f_tb = f_bytes / tb;
+				char buf[64];
+				sprintf(buf, "%.*f", decimals, f_tb);
+				return std::to_string(bytes) + " bytes (" + std::string(buf) + "TB)";
+		}
 }
 
 // Returns platform-specific string to be used as log output or parsed in SysInfoDialog.
@@ -1421,9 +1597,9 @@ bool bbl_calc_md5(std::string &filename, std::string &md5_out)
 }
 
 // SoftFever: copy directory recursively
-void copy_directory_recursively(const boost::filesystem::path &source, const boost::filesystem::path &target)
+void copy_directory_recursively(const boost::filesystem::path &source, const boost::filesystem::path &target, std::function<bool(const std::string)> filter)
 {
-    BOOST_LOG_TRIVIAL(info) << format("copy_directory_recursively %1% -> %2%", source, target);
+    BOOST_LOG_TRIVIAL(info) << Slic3r::format("copy_directory_recursively %1% -> %2%", source, target);
     std::string error_message;
 
     if (boost::filesystem::exists(target))
@@ -1440,10 +1616,12 @@ void copy_directory_recursively(const boost::filesystem::path &source, const boo
             copy_directory_recursively(dir_entry, target_path);
         }
         else {
+			if(filter && filter(name))
+				continue;
             CopyFileResult cfr = copy_file(source_file, target_file, error_message, false);
             if (cfr != CopyFileResult::SUCCESS) {
                 BOOST_LOG_TRIVIAL(error) << "Copying failed(" << cfr << "): " << error_message;
-                throw Slic3r::CriticalException(format(
+                throw Slic3r::CriticalException(Slic3r::format(
                     ("Copying directory %1% to %2% failed: %3%"),
                     source, target, error_message));
             }
@@ -1451,5 +1629,110 @@ void copy_directory_recursively(const boost::filesystem::path &source, const boo
     }
     return;
 }
+
+void save_string_file(const boost::filesystem::path& p, const std::string& str)
+{
+    boost::nowide::ofstream file;
+    file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+    file.open(p.generic_string(), std::ios_base::binary);
+    file.write(str.c_str(), str.size());
+}
+
+void load_string_file(const boost::filesystem::path& p, std::string& str)
+{
+    boost::nowide::ifstream file;
+    file.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+    file.open(p.generic_string(), std::ios_base::binary);
+    std::size_t sz = static_cast<std::size_t>(boost::filesystem::file_size(p));
+    str.resize(sz, '\0');
+    file.read(&str[0], sz);
+}
+
+// pattern string supprt these pattern: "
+// 1. 5#1, insert 1 solid layer every 5 layers. this can be simplified to 5
+// 2."1,7,9", explicitly insert solid layer at layer 1, 7, 9
+bool check_layer_id_pattern(const std::string& pattern, int layer_id){
+    if (pattern.empty() || layer_id < 0)
+        return false;
+
+	// layer_id is 0-based, so we need to add 1 to make it 1-based
+	layer_id++;
+
+    // Remove whitespace and surrounding quotes.
+    std::string p; p.reserve(pattern.size());
+    for (char c : pattern) {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+            continue;
+        p.push_back(c);
+    }
+    if (!p.empty() && (p.front() == '"' || p.front() == '\''))
+        p.erase(p.begin());
+    if (!p.empty() && (p.back() == '"' || p.back() == '\''))
+        p.pop_back();
+    if (p.empty())
+        return false;
+
+    // Explicit list form: "1,7,9" or with counts per entry: "5,9#2,18"
+    if (p.find(',') != std::string::npos) {
+        size_t start = 0;
+        while (start < p.size()) {
+            size_t end = p.find(',', start);
+            std::string token = p.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
+            if (!token.empty()) {
+                try {
+                    size_t hash_pos_token = token.find('#');
+                    if (hash_pos_token == std::string::npos) {
+                        int value = std::stoi(token);
+                        if (value == layer_id)
+                            return true;
+                    } else {
+                        int base_layer = std::stoi(token.substr(0, hash_pos_token));
+                        std::string count_str = token.substr(hash_pos_token + 1);
+                        int local_count = 1;
+                        if (!count_str.empty())
+                            local_count = std::stoi(count_str);
+                        if (base_layer > 0 && local_count > 0) {
+                            if (layer_id >= base_layer && layer_id < base_layer + local_count)
+                                return true;
+                        }
+                    }
+                } catch (...) {
+                    // Ignore invalid tokens
+                }
+            }
+            if (end == std::string::npos)
+                break;
+            start = end + 1;
+        }
+        return false;
+    }
+
+    // Interval form: "N#K" or simplified "N" (equals to N#1)
+    int interval = 0;
+    int count    = 1;
+    size_t hash_pos = p.find('#');
+    try {
+        if (hash_pos == std::string::npos) {
+            interval = std::stoi(p);
+        } else {
+            interval = std::stoi(p.substr(0, hash_pos));
+            std::string count_str = p.substr(hash_pos + 1);
+            if (!count_str.empty())
+                count = std::stoi(count_str);
+        }
+    } catch (...) {
+        return false;
+    }
+
+    if (interval <= 0 || count <= 0)
+        return false;
+
+    // Layers are 1-based. Match layers interval, interval+1, ..., interval+count-1, then repeat every interval.
+    if (layer_id < interval)
+        return false;
+    int mod = layer_id % interval; // For multiples, mod == 0
+    return mod >= 0 && mod < count;
+}
+
 
 }; // namespace Slic3r

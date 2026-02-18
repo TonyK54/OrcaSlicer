@@ -24,6 +24,7 @@
 #include "wx/fs_mem.h"
 #include "wx/stdpaths.h"
 #include <wx/frame.h>
+#include "wx/timer.h"
 #include <wx/tbarbase.h>
 #include "wx/textctrl.h"
 
@@ -70,6 +71,7 @@ private:
     wxWebView *m_browser;
 
     std::string m_AutotestToken;
+    int m_loopback_port { 0 };
 
 #if wxUSE_WEBVIEW_IE
     wxMenuItem *m_script_object_el;

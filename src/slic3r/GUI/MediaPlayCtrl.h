@@ -16,6 +16,7 @@
 #include <boost/thread/condition_variable.hpp>
 
 #include <deque>
+#include <set>
 
 class Button;
 class Label;
@@ -39,18 +40,24 @@ public:
 
     void ToggleStream();
 
+    void msw_rescale();
+
+    void jump_to_play();
+
 protected:
     void onStateChanged(wxMediaEvent & event);
 
     void Play();
 
-    void Stop(wxString const &msg = {});
+    void Stop(wxString const &msg = {}, wxString const &msg2 = {});
 
     void TogglePlay();
 
     void SetStatus(wxString const &msg, bool hyperlink = true);
 
 private:
+    void load();
+
     void on_show_hide(wxShowEvent & evt);
 
     void media_proc();
@@ -60,21 +67,28 @@ private:
     static bool get_stream_url(std::string *url = nullptr);
 
 private:
-    static constexpr wxMediaState MEDIASTATE_IDLE = (wxMediaState) 3;
-    static constexpr wxMediaState MEDIASTATE_INITIALIZING = (wxMediaState) 4;
-    static constexpr wxMediaState MEDIASTATE_LOADING = (wxMediaState) 5;
-    static constexpr wxMediaState MEDIASTATE_BUFFERING = (wxMediaState) 6;
+    static const wxMediaState MEDIASTATE_IDLE = (wxMediaState) 3;
+    static const wxMediaState MEDIASTATE_INITIALIZING = (wxMediaState) 4;
+    static const wxMediaState MEDIASTATE_LOADING = (wxMediaState) 5;
+    static const wxMediaState MEDIASTATE_BUFFERING = (wxMediaState) 6;
+
+    // token
+    std::shared_ptr<int> m_token = std::make_shared<int>(0);
 
     wxMediaCtrl2 * m_media_ctrl;
     wxMediaState m_last_state = MEDIASTATE_IDLE;
     std::string m_machine;
+    int m_lan_proto = 0;
     std::string m_lan_ip;
     std::string m_lan_user;
     std::string m_lan_passwd;
+    std::string m_dev_ver;
+    std::string m_tutk_state;
     bool m_camera_exists = false;
     bool m_lan_mode = false;
-    bool m_tutk_support = false;
+    int m_remote_proto = 0;
     bool m_device_busy = false;
+    bool m_disable_lan = false;
     wxString m_url;
     
     std::deque<wxString> m_tasks;
@@ -86,9 +100,13 @@ private:
     bool m_user_triggered = false;
     int m_failed_retry = 0;
     int m_failed_code = 0;
-    wxDateTime m_next_retry;
+    std::vector<double> m_stat;
+    std::set<int> m_last_failed_codes;
+    wxDateTime    m_last_user_play;
+    wxDateTime    m_next_retry;
 
     ::Button *m_button_play;
+    ::Label * m_label_stat;
     ::Label * m_label_status;
 };
 

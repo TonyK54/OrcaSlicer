@@ -25,7 +25,8 @@ set(_curl_platform_flags
 )
 
 if (WIN32)
-  set(_curl_platform_flags  ${_curl_platform_flags} -DCMAKE_USE_SCHANNEL=ON)
+  #set(_curl_platform_flags  ${_curl_platform_flags} -DCMAKE_USE_SCHANNEL=ON)
+  set(_curl_platform_flags  ${_curl_platform_flags} -DCMAKE_USE_OPENSSL=ON -DCURL_CA_PATH:STRING=none)
 elseif (APPLE)
   set(_curl_platform_flags 
     
@@ -55,7 +56,7 @@ else()
   set(_curl_static ON)
 endif()
 
-bambustudio_add_cmake_project(CURL
+orcaslicer_add_cmake_project(CURL
   # GIT_REPOSITORY      https://github.com/curl/curl.git
   # GIT_TAG             curl-7_75_0
   URL                 https://github.com/curl/curl/archive/refs/tags/curl-7_75_0.zip
@@ -65,14 +66,16 @@ bambustudio_add_cmake_project(CURL
   #                     ${GIT_EXECUTABLE} apply --whitespace=fix ${CMAKE_CURRENT_LIST_DIR}/curl-mods.patch
   CMAKE_ARGS
     -DBUILD_TESTING:BOOL=OFF
+    -DBUILD_CURL_EXE:BOOL=OFF
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DCURL_STATICLIB=${_curl_static}
     ${_curl_platform_flags}
 )
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  add_dependencies(dep_CURL dep_OpenSSL)
-endif ()
+if(NOT OPENSSL_FOUND)
+  # (openssl may or may not be built)
+  add_dependencies(dep_CURL ${OPENSSL_PKG})
+endif()
 
 if (MSVC)
     add_debug_dep(dep_CURL)

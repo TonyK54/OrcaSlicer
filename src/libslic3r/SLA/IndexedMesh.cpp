@@ -116,7 +116,7 @@ const std::vector<Vec3f>& IndexedMesh::vertices() const
 
 
 
-const std::vector<Vec3i>& IndexedMesh::indices()  const
+const std::vector<Vec3i32>& IndexedMesh::indices()  const
 {
     return m_tm->indices;
 }
@@ -130,7 +130,7 @@ const Vec3f& IndexedMesh::vertices(size_t idx) const
 
 
 
-const Vec3i& IndexedMesh::indices(size_t idx) const
+const Vec3i32& IndexedMesh::indices(size_t idx) const
 {
     return m_tm->indices[idx];
 }
@@ -184,10 +184,11 @@ IndexedMesh::query_ray_hits(const Vec3d &s, const Vec3d &dir) const
 
     // Remove duplicates. They sometimes appear, for example when the ray is cast
     // along an axis of a cube due to floating-point approximations in igl (?)
-    hits.erase(std::unique(hits.begin(), hits.end(),
-                           [](const igl::Hit& a, const igl::Hit& b)
-                           { return a.t == b.t; }),
-               hits.end());
+    // BBS: STUDIO-2591 A mesh with overlapping faces cannot be painted
+    //hits.erase(std::unique(hits.begin(), hits.end(),
+    //                       [](const igl::Hit& a, const igl::Hit& b)
+    //                       { return a.t == b.t; }),
+    //           hits.end());
 
     //  Convert the igl::Hit into hit_result
     outs.reserve(hits.size());
@@ -393,7 +394,7 @@ PointSet normals(const PointSet& points,
             if (ic >= 0) { // The point is right on a vertex of the triangle
                 for (size_t n = 0; n < mesh.indices().size(); ++n) {
                     thr();
-                    Vec3i ni = mesh.indices(n);
+                    Vec3i32 ni = mesh.indices(n);
                     if ((ni(X) == ic || ni(Y) == ic || ni(Z) == ic))
                         neigh.emplace_back(n);
                 }
@@ -401,7 +402,7 @@ PointSet normals(const PointSet& points,
                 // now get all the neigboring triangles
                 for (size_t n = 0; n < mesh.indices().size(); ++n) {
                     thr();
-                    Vec3i ni = mesh.indices(n);
+                    Vec3i32 ni = mesh.indices(n);
                     if ((ni(X) == ia || ni(Y) == ia || ni(Z) == ia) &&
                         (ni(X) == ib || ni(Y) == ib || ni(Z) == ib))
                         neigh.emplace_back(n);

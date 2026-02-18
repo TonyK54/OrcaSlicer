@@ -8,6 +8,10 @@
 #include <wx/clipbrd.h>
 #include <wx/dcgraph.h>
 #include "GUI_App.hpp"
+#include <slic3r/GUI/StatusPanel.hpp>
+
+#include "DeviceCore/DevManager.h"
+#include "DeviceCore/DevStorage.h"
 
 namespace Slic3r {
 namespace GUI {
@@ -23,14 +27,14 @@ wxEND_EVENT_TABLE()
 
 wxDEFINE_EVENT(EVT_VCAMERA_SWITCH, wxMouseEvent);
 wxDEFINE_EVENT(EVT_SDCARD_ABSENT_HINT, wxCommandEvent);
+wxDEFINE_EVENT(EVT_CAM_SOURCE_CHANGE, wxCommandEvent);
 
 #define CAMERAPOPUP_CLICK_INTERVAL 20
 
 const wxColour TEXT_COL = wxColour(43, 52, 54);
 
-CameraPopup::CameraPopup(wxWindow *parent, MachineObject* obj)
-   : PopupWindow(parent, wxBORDER_NONE | wxPU_CONTAINS_CONTROLS),
-    m_obj(obj)
+CameraPopup::CameraPopup(wxWindow *parent)
+   : PopupWindow(parent, wxBORDER_NONE | wxPU_CONTAINS_CONTROLS)
 {
 #ifdef __WINDOWS__
     SetDoubleBuffered(true);
@@ -52,8 +56,6 @@ CameraPopup::CameraPopup(wxWindow *parent, MachineObject* obj)
     m_text_recording->SetFont(Label::Head_14);
     m_text_recording->SetForegroundColour(TEXT_COL);
     m_switch_recording = new SwitchButton(m_panel);
-    if (obj)
-        m_switch_recording->SetValue(obj->camera_recording_when_printing);
 
     //vcamera
     m_text_vcamera = new wxStaticText(m_panel, wxID_ANY, _L("Go Live"));
@@ -66,6 +68,24 @@ CameraPopup::CameraPopup(wxWindow *parent, MachineObject* obj)
     top_sizer->Add(m_switch_recording, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, FromDIP(5));
     top_sizer->Add(m_text_vcamera, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, FromDIP(5));
     top_sizer->Add(m_switch_vcamera, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, FromDIP(5));
+
+#if !BBL_RELEASE_TO_PUBLIC
+    m_text_liveview_retry = new wxStaticText(m_panel, wxID_ANY, _L("Liveview Retry"));
+    m_text_liveview_retry->Wrap(-1);
+    m_text_liveview_retry->SetFont(Label::Head_14);
+    m_text_liveview_retry->SetForegroundColour(TEXT_COL);
+    m_switch_liveview_retry = new SwitchButton(m_panel);
+    bool auto_retry         = wxGetApp().app_config->get("liveview", "auto_retry") != "false";
+    m_switch_liveview_retry->SetValue(auto_retry);
+
+    top_sizer->Add(m_text_liveview_retry, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, FromDIP(5));
+    top_sizer->Add(m_switch_liveview_retry, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, FromDIP(5));
+
+    m_switch_liveview_retry->Bind(wxEVT_TOGGLEBUTTON, [this](wxCommandEvent &e) {
+        wxGetApp().app_config->set("liveview", "auto_retry", e.IsChecked());
+        e.Skip();
+    });
+#endif
 
     //resolution
     m_text_resolution = new wxStaticText(m_panel, wxID_ANY, _L("Resolution"));
@@ -80,9 +100,35 @@ CameraPopup::CameraPopup(wxWindow *parent, MachineObject* obj)
         top_sizer->Add(m_resolution_options[i], 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, FromDIP(5));
         top_sizer->Add(0, 0, wxALL, 0);
     }
-    if (obj)
-        sync_resolution_setting(obj->camera_resolution);
 
+    // custom IP camera
+    m_custom_camera_input_confirm = new Button(m_panel, _L("Enable"));
+    m_custom_camera_input_confirm->SetBackgroundColor(wxColour(38, 166, 154));
+    m_custom_camera_input_confirm->SetBorderColor(wxColour(38, 166, 154));
+    m_custom_camera_input_confirm->SetTextColor(wxColour(0xFFFFFE));
+    m_custom_camera_input_confirm->SetFont(Label::Body_14);
+    m_custom_camera_input_confirm->SetMinSize(wxSize(FromDIP(90), FromDIP(30)));
+    m_custom_camera_input_confirm->SetPosition(wxDefaultPosition);
+    m_custom_camera_input_confirm->SetCornerRadius(FromDIP(12));
+    m_custom_camera_input = new TextInput(m_panel, wxEmptyString, wxEmptyString, wxEmptyString, wxDefaultPosition, wxDefaultSize);
+    m_custom_camera_input->GetTextCtrl()->SetHint(_L("Hostname or IP"));
+    m_custom_camera_input->GetTextCtrl()->SetFont(Label::Body_14);
+    m_custom_camera_hint = new wxStaticText(m_panel, wxID_ANY, _L("Custom camera source"));
+    m_custom_camera_hint->Wrap(-1);
+    m_custom_camera_hint->SetFont(Label::Head_14);
+    m_custom_camera_hint->SetForegroundColour(TEXT_COL);
+
+    m_custom_camera_input_confirm->Bind(wxEVT_BUTTON, &CameraPopup::on_camera_source_changed, this);
+
+    if (!wxGetApp().app_config->get("camera", "custom_source").empty()) {
+        m_custom_camera_input->GetTextCtrl()->SetValue(wxGetApp().app_config->get("camera", "custom_source"));
+        set_custom_cam_button_state(wxGetApp().app_config->get("camera", "enable_custom_source") == "true");
+    }
+
+    top_sizer->Add(m_custom_camera_hint, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxALL, FromDIP(5));
+    top_sizer->Add(0, 0, wxALL, 0);
+    top_sizer->Add(m_custom_camera_input, 2, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxEXPAND | wxALL, FromDIP(5));
+    top_sizer->Add(m_custom_camera_input_confirm, 1, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxALL, FromDIP(5));
     main_sizer->Add(top_sizer, 0, wxALL, FromDIP(10));
 
     auto url = wxString::Format(L"https://wiki.bambulab.com/%s/software/bambu-studio/virtual-camera", L"en");
@@ -127,7 +173,6 @@ CameraPopup::CameraPopup(wxWindow *parent, MachineObject* obj)
     m_interval_timer = new wxTimer();
     m_interval_timer->SetOwner(this);
 
-    check_func_supported();
     wxGetApp().UpdateDarkUIWin(this);
 }
 
@@ -138,10 +183,41 @@ void CameraPopup::sdcard_absent_hint()
     GetEventHandler()->ProcessEvent(evt);
 }
 
+void CameraPopup::on_camera_source_changed(wxCommandEvent &event)
+{
+    if (m_obj && !m_custom_camera_input->GetTextCtrl()->IsEmpty()) {
+        handle_camera_source_change();
+    }
+}
+
+void CameraPopup::handle_camera_source_change()
+{
+    m_custom_camera_enabled = !m_custom_camera_enabled;
+
+    set_custom_cam_button_state(m_custom_camera_enabled);
+
+    wxGetApp().app_config->set("camera", "custom_source", m_custom_camera_input->GetTextCtrl()->GetValue().ToStdString());
+    wxGetApp().app_config->set("camera", "enable_custom_source", m_custom_camera_enabled);
+
+    wxCommandEvent evt(EVT_CAM_SOURCE_CHANGE);
+    evt.SetEventObject(this);
+    GetEventHandler()->ProcessEvent(evt);
+}
+
+void CameraPopup::set_custom_cam_button_state(bool state)
+{
+    m_custom_camera_enabled = state;
+    auto stateColour = state ? wxColour(170, 0, 0) : wxColour(38, 166, 154);
+    auto stateText = state ? "Disable" : "Enable";
+    m_custom_camera_input_confirm->SetBackgroundColor(stateColour);
+    m_custom_camera_input_confirm->SetBorderColor(stateColour);
+    m_custom_camera_input_confirm->SetLabel(_L(stateText));
+}
+
 void CameraPopup::on_switch_recording(wxCommandEvent& event)
 {
     if (!m_obj) return;
-    if (m_obj->sdcard_state != MachineObject::SdcardState::HAS_SDCARD_NORMAL) {
+    if (m_obj->GetStorage()->get_sdcard_state()  != DevStorage::SdcardState::HAS_SDCARD_NORMAL) {
         sdcard_absent_hint();
         return;
     }
@@ -260,10 +336,13 @@ void CameraPopup::sync_vcamera_state(bool show_vcamera)
     rescale();
 }
 
-void CameraPopup::check_func_supported()
+void CameraPopup::check_func_supported(MachineObject *obj2)
 {
+    m_obj = obj2;
+    if (m_obj == nullptr)
+        return;
     // function supported
-    if (m_obj->is_function_supported(PrinterFunction::FUNC_RECORDING) && m_obj->has_ipcam) {
+    if (m_obj->has_ipcam) {
         m_text_recording->Show();
         m_switch_recording->Show();
     } else {
@@ -271,7 +350,7 @@ void CameraPopup::check_func_supported()
         m_switch_recording->Hide();
     }
 
-    if (m_obj->is_function_supported(PrinterFunction::FUNC_VIRTUAL_CAMERA) && m_obj->has_ipcam) {
+    if (m_obj->virtual_camera && m_obj->has_ipcam) {
         m_text_vcamera->Show();
         m_switch_vcamera->Show();
         if (is_vcamera_show) {
@@ -285,7 +364,7 @@ void CameraPopup::check_func_supported()
         link_underline->Hide();
     }
 
-    allow_alter_resolution = (m_obj->is_function_supported(PrinterFunction::FUNC_ALTER_RESOLUTION) && m_obj->has_ipcam);
+    allow_alter_resolution = ( (m_obj->camera_resolution_supported.size() > 1?true:false) && m_obj->has_ipcam);
 
     //check u2 version
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
@@ -300,11 +379,20 @@ void CameraPopup::check_func_supported()
         auto curr_res = to_resolution_msg_string(CameraResolution(i));
         std::vector <std::string> ::iterator it = std::find(resolution_supported.begin(), resolution_supported.end(), curr_res);
         if ((it == resolution_supported.end())||(support_count <= 1) || !obj->is_support_1080dpi)
-            m_resolution_options[i] -> Hide();
+            m_resolution_options[i]->Hide();
+        else {
+            m_resolution_options[i]->Show();
+            if (m_obj->camera_resolution == curr_res) {
+                resolution_rbtns[i]->SetValue(true);
+            }
+        }
     }
     //hide resolution if there is only one choice
     if (support_count <= 1 || !obj->is_support_1080dpi) {
         m_text_resolution->Hide();
+    }
+    else {
+        m_text_resolution->Show();
     }
 }
 
@@ -321,9 +409,9 @@ void CameraPopup::update(bool vcamera_streaming)
 wxString CameraPopup::to_resolution_label_string(CameraResolution resolution) {
     switch (resolution) {
     case RESOLUTION_720P:
-        return _L("720p");
+        return "720p";
     case RESOLUTION_1080P:
-        return _L("1080p");
+        return "1080p";
     default:
         return "";
     }

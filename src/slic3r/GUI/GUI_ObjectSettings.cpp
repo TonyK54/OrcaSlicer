@@ -26,7 +26,9 @@ namespace GUI
 OG_Settings::OG_Settings(wxWindow* parent, const bool staticbox) :
     m_parent(parent)
 {
-    wxString title = staticbox ? " " : ""; // temporary workaround - #ys_FIXME
+    //BBS
+    wxString title = "";
+    //wxString title = staticbox ? " " : ""; // temporary workaround - #ys_FIXME
     m_og = std::make_shared<ConfigOptionsGroup>(parent, title);
 }
 
@@ -106,13 +108,14 @@ bool ObjectSettings::update_settings_list()
 			auto opt_key = (line.get_options())[0].opt_id;  //we assume that we have one option per line
 
 			auto btn = new ScalableButton(parent, wxID_ANY, m_bmp_delete);
+            btn->SetBackgroundColour(parent->GetBackgroundColour());
             btn->SetToolTip(_(L("Remove parameter")));
 
             btn->SetBitmapFocus(m_bmp_delete_focus.bmp());
             btn->SetBitmapHover(m_bmp_delete_focus.bmp());
 
 			btn->Bind(wxEVT_BUTTON, [opt_key, config, this](wxEvent &event) {
-                wxGetApp().plater()->take_snapshot(from_u8(boost::format(("Delete Option %s") % opt_key).str()));
+                wxGetApp().plater()->take_snapshot(from_u8((boost::format("Delete Option %s") % opt_key).str()).ToStdString());
 				config->erase(opt_key);
                 wxGetApp().obj_list()->changed_object();
                 wxTheApp->CallAfter([this]() {
@@ -159,7 +162,7 @@ bool ObjectSettings::update_settings_list()
             for (auto& opt : cat.second)
                 optgroup->get_field(opt)->m_on_change = [optgroup](const std::string& opt_id, const boost::any& value) {
                     // first of all take a snapshot and then change value in configuration
-                    wxGetApp().plater()->take_snapshot(from_u8((boost::format("Change Option %s")% opt_id).str()));
+                    wxGetApp().plater()->take_snapshot(from_u8((boost::format("Change Option %s")% opt_id).str()).ToStdString());
                     optgroup->on_change_OG(opt_id, value);
                 };
 
@@ -183,7 +186,6 @@ bool ObjectSettings::update_settings_list()
 }
 
 #else
-
 bool ObjectSettings::update_settings_list()
 {
     if (!wxGetApp().is_editor())
@@ -197,52 +199,106 @@ bool ObjectSettings::update_settings_list()
     wxDataViewItemArray items;
     objects_ctrl->GetSelections(items);
 
-    std::map<ObjectBase *, ModelConfig *> object_configs;
-    bool is_object_settings = true;
-    bool is_volume_settings = true;
+    std::map<ObjectBase *, ModelConfig*> plate_configs;
+    std::map<ObjectBase *, ModelConfig*> object_configs;
+    bool is_plate_settings = false;
+    bool is_object_settings = false;
+    bool is_volume_settings = false;
+    bool is_layer_range_settings = false;
+    bool is_layer_root = false;
     ModelObject * parent_object = nullptr;
     for (auto item : items) {
         auto type = objects_model->GetItemType(item);
-        if (type != itObject && type != itVolume) {
+        if (type != itPlate && type != itObject && type != itVolume && type != itLayerRoot && type != itLayer) {
             continue;
         }
+        int plate_id = objects_model->GetPlateIdByItem(item);
+        PartPlateList& ppl = wxGetApp().plater()->get_partplate_list();
+        if (plate_id < 0 || plate_id >= ppl.get_plate_count()) {
+            plate_id = ppl.get_curr_plate_index();
+        }
+        assert(plate_id >= 0 && plate_id < ppl.get_plate_count());
+        static ModelConfig cfg;
+        cfg.assign_config(*ppl.get_plate(plate_id)->config());
+        if (type == itPlate) {
+            is_plate_settings = true;
+            plate_configs.emplace(ppl.get_plate(plate_id), &cfg);
+            break;
+        }
+
         const int obj_idx = objects_model->GetObjectIdByItem(item);
         assert(obj_idx >= 0);
         auto object = wxGetApp().model().objects[obj_idx];
         if (type == itObject) {
-            if (!is_object_settings)
-                return false;
-            is_volume_settings = false;
+            is_object_settings = true;
+            plate_configs.emplace(ppl.get_plate(plate_id), &cfg);
             object_configs.emplace(object, &object->config);
-        } else {
-            if (!is_volume_settings)
-                return false;
+        } 
+        else if(type == itVolume){
+            is_volume_settings = true;
             if (parent_object && parent_object != object)
                 return false;
+            plate_configs.emplace(ppl.get_plate(plate_id), &cfg);
             parent_object = object;
-            is_object_settings = false;
             const int vol_idx = objects_model->GetVolumeIdByItem(item);
             assert(vol_idx >= 0);
             auto volume = object->volumes[vol_idx];
             object_configs.emplace(volume, &volume->config);
         }
+        else if(type == itLayer){
+            is_layer_range_settings = true;
+            if (parent_object && parent_object != object)
+                return false;
+            plate_configs.emplace(ppl.get_plate(plate_id), &cfg);
+            parent_object = object;
+
+            t_layer_height_range height_range = objects_model->GetLayerRangeByItem(item);
+            object_configs.emplace( (ObjectBase*)(&object->layer_config_ranges.at(height_range)), &object->layer_config_ranges.at(height_range) );
+        }
+        else if (type == itLayerRoot) {
+            is_layer_root = true;
+        }
     }
 
+    auto tab_plate = dynamic_cast<TabPrintPlate*>(wxGetApp().get_plate_tab());
     auto tab_object = dynamic_cast<TabPrintModel*>(wxGetApp().get_model_tab());
     auto tab_volume = dynamic_cast<TabPrintModel*>(wxGetApp().get_model_tab(true));
+    auto tab_layer = dynamic_cast<TabPrintModel*>(wxGetApp().get_layer_tab());
 
-    if (is_volume_settings == is_object_settings) {
+    if (is_plate_settings) {
+        tab_plate->set_model_config(plate_configs);
         tab_object->set_model_config({});
         tab_volume->set_model_config({});
-        m_tab_active = nullptr;
-    } else if (is_volume_settings) {
-        tab_object->set_model_config({{parent_object, &parent_object->config}});
-        tab_volume->set_model_config(object_configs);
-        m_tab_active = tab_volume;
-    } else if (is_object_settings) {
+        tab_layer->set_model_config({});
+        ;// m_tab_active = tab_plate;
+    }
+    else if (is_object_settings) {
+        tab_plate->set_model_config(plate_configs);
         tab_object->set_model_config(object_configs);
         tab_volume->set_model_config({});
-        m_tab_active = tab_object;
+        tab_layer->set_model_config({});
+        //m_tab_active = tab_object;
+    }   
+    else if (is_volume_settings) {
+        tab_plate->set_model_config(plate_configs);
+        tab_object->set_model_config({ {parent_object, &parent_object->config} });
+        tab_volume->set_model_config(object_configs);
+        tab_layer->set_model_config({});
+        //m_tab_active = tab_volume;
+    }
+    else if (is_layer_range_settings) {
+        tab_plate->set_model_config(plate_configs);
+        tab_object->set_model_config({ {parent_object, &parent_object->config} });
+        tab_volume->set_model_config({});
+        tab_layer->set_model_config(object_configs);
+        //m_tab_active = tab_layer;
+    }    
+    else {
+        tab_plate->set_model_config({});
+        tab_object->set_model_config({});
+        tab_volume->set_model_config({});
+        tab_layer->set_model_config({});
+        //m_tab_active = nullptr;
     }
     ((ParamsPanel*) tab_object->GetParent())->set_active_tab(nullptr);
     return true;
@@ -331,6 +387,8 @@ void ObjectSettings::update_config_values(ModelConfig* config)
 
     //BBS: change local config to DynamicPrintConfig
     ConfigManipulation config_manipulation(load_config, toggle_field, nullptr, nullptr, &(config->get()));
+
+    config_manipulation.set_is_BBL_Printer(wxGetApp().preset_bundle->is_bbl_vendor());
 
     if (!is_object_settings)
     {

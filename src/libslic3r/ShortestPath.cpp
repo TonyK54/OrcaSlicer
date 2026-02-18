@@ -1030,6 +1030,9 @@ void reorder_extrusion_entities(std::vector<ExtrusionEntity*> &entities, const s
 
 void chain_and_reorder_extrusion_entities(std::vector<ExtrusionEntity*> &entities, const Point *start_near)
 {
+    // this function crashes if there are empty elements in entities
+    entities.erase(std::remove_if(entities.begin(), entities.end(), [](ExtrusionEntity *entity) { return static_cast<ExtrusionEntityCollection *>(entity)->empty(); }),
+                   entities.end());
 	reorder_extrusion_entities(entities, chain_extrusion_entities(entities, start_near));
 }
 
@@ -1042,6 +1045,7 @@ std::vector<std::pair<size_t, bool>> chain_extrusion_paths(std::vector<Extrusion
 void reorder_extrusion_paths(std::vector<ExtrusionPath> &extrusion_paths, const std::vector<std::pair<size_t, bool>> &chain)
 {
 	assert(extrusion_paths.size() == chain.size());
+	if(extrusion_paths.empty()) return;
 	std::vector<ExtrusionPath> out;
 	out.reserve(extrusion_paths.size());
     for (const std::pair<size_t, bool> &idx : chain) {
@@ -1055,6 +1059,16 @@ void reorder_extrusion_paths(std::vector<ExtrusionPath> &extrusion_paths, const 
 void chain_and_reorder_extrusion_paths(std::vector<ExtrusionPath> &extrusion_paths, const Point *start_near)
 {
 	reorder_extrusion_paths(extrusion_paths, chain_extrusion_paths(extrusion_paths, start_near));
+}
+
+std::vector<size_t> chain_expolygons(const ExPolygons &input_exploy) {
+	Points points;
+	for (const ExPolygon &exploy : input_exploy) {
+		BoundingBox bbox;
+		bbox = get_extents(exploy);
+		points.push_back(bbox.center());
+	}
+	return chain_points(points);
 }
 
 std::vector<size_t> chain_points(const Points &points, Point *start_near)
@@ -1899,14 +1913,15 @@ static inline void improve_ordering_by_two_exchanges_with_segment_flipping(Polyl
 	for (const FlipEdge &edge : edges) {
 		Polyline &pl = polylines[edge.source_index];
 		out.emplace_back(std::move(pl));
-		if (edge.p2 == pl.first_point().cast<double>()) {
+		if (edge.p2 == out.back().first_point().cast<double>()) {
 			// Polyline is flipped.
 			out.back().reverse();
 		} else {
 			// Polyline is not flipped.
-			assert(edge.p1 == pl.first_point().cast<double>());
+			assert(edge.p1 == out.back().first_point().cast<double>());
 		}
 	}
+	polylines = out;
 
 #ifndef NDEBUG
 	double cost_final = cost();

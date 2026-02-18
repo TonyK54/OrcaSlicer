@@ -97,6 +97,7 @@ void WKWebView_setTransparentBackground(void * web)
 {
     WKWebView * webView = (WKWebView*)web;
     [webView layer].backgroundColor = [NSColor clearColor].CGColor;
+    [webView registerForDraggedTypes: @[NSFilenamesPboardType]];
 }
 
 void openFolderForFile(wxString const & file)
@@ -106,6 +107,57 @@ void openFolderForFile(wxString const & file)
 }
     
 }
+}
+
+@end
+
+/* WKWebView */
+@implementation WKWebView (DragDrop)
+
++ (void) load
+{
+    Method draggingEntered = class_getInstanceMethod([WKWebView class], @selector(draggingEntered:));
+    Method draggingEntered2 = class_getInstanceMethod([WKWebView class], @selector(draggingEntered2:));
+    method_exchangeImplementations(draggingEntered, draggingEntered2);
+
+    Method draggingUpdated = class_getInstanceMethod([WKWebView class], @selector(draggingUpdated:));
+    Method draggingUpdated2 = class_getInstanceMethod([WKWebView class], @selector(draggingUpdated2:));
+    method_exchangeImplementations(draggingUpdated, draggingUpdated2);
+
+    Method prepareForDragOperation = class_getInstanceMethod([WKWebView class], @selector(prepareForDragOperation:));
+    Method prepareForDragOperation2 = class_getInstanceMethod([WKWebView class], @selector(prepareForDragOperation2:));
+    method_exchangeImplementations(prepareForDragOperation, prepareForDragOperation2);
+
+    Method performDragOperation = class_getInstanceMethod([WKWebView class], @selector(performDragOperation:));
+    Method performDragOperation2 = class_getInstanceMethod([WKWebView class], @selector(performDragOperation2:));
+    method_exchangeImplementations(performDragOperation, performDragOperation2);
+}
+
+- (NSDragOperation)draggingEntered2:(id<NSDraggingInfo>)sender
+{
+    return NSDragOperationCopy;
+}
+
+- (NSDragOperation)draggingUpdated2:(id<NSDraggingInfo>)sender
+{
+    return NSDragOperationCopy;
+}
+
+- (BOOL)prepareForDragOperation2:(id<NSDraggingInfo>)info
+{
+    return TRUE;
+}
+
+- (BOOL)performDragOperation2:(id<NSDraggingInfo>)info
+{
+    NSURL* url = [NSURL URLFromPasteboard:[info draggingPasteboard]];
+    if (!url) {
+        return FALSE;
+    }
+    NSString * path = [url path];
+    url = [NSURL fileURLWithPath: path];
+    [self loadFileURL:url allowingReadAccessToURL:url];
+    return TRUE;
 }
 
 @end
@@ -208,7 +260,7 @@ void openFolderForFile(wxString const & file)
 
 @end
 
-/* edit column for wxTableView */
+/* edit column for wxCocoaOutlineView */
 
 #include <wx/dataview.h>
 #include <wx/osx/cocoa/dataview.h>
@@ -216,8 +268,20 @@ void openFolderForFile(wxString const & file)
 
 @implementation wxCocoaOutlineView (Edit)
 
+bool addObserver = false;
+
 - (BOOL)outlineView: (NSOutlineView*) view shouldEditTableColumn:(nullable NSTableColumn *)tableColumn item:(nonnull id)item
 {
+    NSClipView * clipView = [[self enclosingScrollView] contentView];
+    if (!addObserver) {
+        addObserver = true;
+        clipView.postsBoundsChangedNotifications = YES;
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(synchronizedViewContentBoundsDidChange:)
+                                                     name:NSViewBoundsDidChangeNotification
+                                                   object:clipView];
+    }
+
     wxDataViewColumn* const col((wxDataViewColumn *)[tableColumn getColumnPointer]);
     wxDataViewItem item2([static_cast<wxPointerObject *>(item) pointer]);
 
@@ -227,7 +291,16 @@ void openFolderForFile(wxString const & file)
     dvc->GetEventHandler()->ProcessEvent( event );
     if( !event.IsAllowed() )
         return NO;
+
     return YES;
+}
+
+- (void)synchronizedViewContentBoundsDidChange:(NSNotification *)notification
+{
+    wxDataViewCtrl* const dvc = implementation->GetDataViewCtrl();
+    wxDataViewCustomRenderer * r = dvc->GetCustomRendererPtr();
+    if (r)
+        r->FinishEditing();
 }
 
 @end
@@ -343,4 +416,13 @@ void initGestures(void * view,  wxEvtHandler * handler)
 }
 
 }
+}
+
+void StaticGroup_layoutBadge(void * group, void * badge)
+{
+    NSView * vg = (NSView *)group;
+    NSView * vb = (NSView *)badge;
+    vb.translatesAutoresizingMaskIntoConstraints = NO;
+    [vg addConstraint: [NSLayoutConstraint constraintWithItem:vb attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:vg attribute:NSLayoutAttributeTop multiplier:1.0 constant:15]];
+    [vg addConstraint: [NSLayoutConstraint constraintWithItem:vb attribute:NSLayoutAttributeRight relatedBy:NSLayoutRelationEqual toItem:vg attribute:NSLayoutAttributeRight multiplier:1.0 constant:-1]];
 }

@@ -100,12 +100,14 @@ wxString ProgressDialog::FormatString(wxString title)
                 break;
             }
         }
-
         // set mode
         if (m_mode == 0) {
             m_simplebook->SetSelection(0);
             m_msg->SetLabel(title);
         } else {
+            wxSize content_size = m_msg->GetTextExtent(title);
+            int resized_height = (int(content_size.x / PROGRESSDIALOG_GAUGE_SIZE.x) + 1) * content_size.y;
+            set_panel_height(resized_height);
             m_simplebook->SetSelection(1);
             m_msg_2line->SetLabel(title);
         }
@@ -188,7 +190,7 @@ bool ProgressDialog::Create(const wxString &title, const wxString &message, int 
         m_msg_2line->Wrap(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x);
         m_msg_2line->SetFont(::Label::Body_13);
         m_msg_2line->SetForegroundColour(PROGRESSDIALOG_GREY_700);
-        m_msg_2line->SetMaxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE);
+        m_msg_2line->SetMaxSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, -1));
         sizer_2line->Add(m_msg_2line, 1, wxALL, 0);
         m_panel_2line->SetSizer(sizer_2line);
         m_panel_2line->Layout();
@@ -223,9 +225,11 @@ bool ProgressDialog::Create(const wxString &title, const wxString &message, int 
     maximum /= m_factor;
 #endif
 
-    m_gauge = new wxGauge(this, wxID_ANY, maximum, wxDefaultPosition, PROGRESSDIALOG_GAUGE_SIZE, gauge_style);
-    m_gauge->SetValue(0);
-    m_sizer_main->Add(m_gauge, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(28));
+    if (!HasPDFlag(wxPD_NO_PROGRESS)) {
+        m_gauge = new wxGauge(this, wxID_ANY, maximum, wxDefaultPosition, PROGRESSDIALOG_GAUGE_SIZE, gauge_style);
+        m_gauge->SetValue(0);
+        m_sizer_main->Add(m_gauge, 0, wxEXPAND | wxLEFT | wxRIGHT, FromDIP(28));
+    }
 
 #ifdef __WXMSW__
     //m_block_left = new wxWindow(m_gauge, wxID_ANY, wxPoint(0, 0), wxSize(FromDIP(2), PROGRESSDIALOG_GAUGE_SIZE.y * 2));
@@ -239,9 +243,7 @@ bool ProgressDialog::Create(const wxString &title, const wxString &message, int 
 
     if (HasPDFlag(wxPD_CAN_ABORT)) {
         m_button_cancel = new Button(this, _L("Cancel"));
-        m_button_cancel->SetTextColor(PROGRESSDIALOG_GREY_700);
-        m_button_cancel->SetMinSize(PROGRESSDIALOG_CANCEL_BUTTON_SIZE);
-        m_button_cancel->SetCornerRadius(PROGRESSDIALOG_CANCEL_BUTTON_SIZE.y / 2);
+        m_button_cancel->SetStyle(ButtonStyle::Regular, ButtonType::Choice);
         m_button_cancel->Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &event) {
             if (m_state == Finished) {
                 event.Skip();
@@ -250,6 +252,7 @@ bool ProgressDialog::Create(const wxString &title, const wxString &message, int 
                 DisableAbort();
                 m_button_cancel->Enable(false);
                 DisableSkip();
+                OnCancel();
                 m_timeStop = wxGetCurrentTime();
             }
         });
@@ -509,14 +512,15 @@ bool ProgressDialog::Update(int value, const wxString &newmsg, bool *skip)
 {
     if (!DoBeforeUpdate(skip)) return false;
 
-    wxCHECK_MSG(m_gauge, false, "dialog should be fully created");
+    wxCHECK_MSG(m_msg || m_gauge, false, "dialog should be fully created");
 
 #ifdef __WXMSW__
     value /= m_factor;
 #endif // __WXMSW__
 
     wxASSERT_MSG(value <= m_maximum, wxT("invalid progress value"));
-    m_gauge->SetValue(value);
+    if (m_gauge)
+        m_gauge->SetValue(value);
 
     UpdateMessage(newmsg);
 
@@ -588,10 +592,10 @@ bool ProgressDialog::Pulse(const wxString &newmsg, bool *skip)
 {
     if (!DoBeforeUpdate(skip)) return false;
 
-    wxCHECK_MSG(m_gauge, false, "dialog should be fully created");
+    wxCHECK_MSG(m_msg || m_gauge, false, "dialog should be fully created");
 
     // show a bit of progress
-    m_gauge->Pulse();
+    if (m_gauge) m_gauge->Pulse();
 
     UpdateMessage(newmsg);
 
@@ -680,6 +684,15 @@ void ProgressDialog::SetRange(int maximum)
     SetMaximum(maximum);
 }
 
+void ProgressDialog::set_panel_height(int height) {
+    m_simplebook->SetSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+    m_simplebook->SetMinSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+    m_panel_2line->SetSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+    m_panel_2line->SetMinSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+    m_msg_2line->SetSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+    m_msg_2line->SetMinSize(wxSize(PROGRESSDIALOG_SIMPLEBOOK_SIZE.x, height));
+}
+
 void ProgressDialog::SetMaximum(int maximum)
 {
     m_maximum = maximum;
@@ -732,6 +745,8 @@ void ProgressDialog::OnCancel(wxCommandEvent &event)
         DisableAbort();
         DisableSkip();
 
+        OnCancel();
+
         // save the time when the dialog was stopped
         m_timeStop = wxGetCurrentTime();
     }
@@ -756,6 +771,7 @@ void ProgressDialog::OnClose(wxCloseEvent &event)
         m_state = Canceled;
         DisableAbort();
         DisableSkip();
+        OnCancel();
 
         m_timeStop = wxGetCurrentTime();
     }
@@ -797,7 +813,7 @@ void ProgressDialog::DoSetSize(int x, int y, int width, int height, int sizeFlag
     //    m_block_right->SetPosition(wxPoint(PROGRESSDIALOG_GAUGE_SIZE.x - 2, 0));
     //}
 #endif
-    wxWindow::DoSetSize(x, y, width, height, sizeFlags);
+    wxDialog::DoSetSize(x, y, width, height, sizeFlags);
 }
 
 void ProgressDialog::DisableOtherWindows()

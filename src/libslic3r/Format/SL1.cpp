@@ -299,14 +299,14 @@ ConfigSubstitutions import_sla_archive(const std::string &zipfname, DynamicPrint
 // function return if the archive did not contain any profile.
 ConfigSubstitutions import_sla_archive(
     const std::string &      zipfname,
-    Vec2i                    windowsize,
+    Vec2i32                    windowsize,
     indexed_triangle_set &           out,
     DynamicPrintConfig &     profile_out,
     std::function<bool(int)> progr)
 {
     // Ensure minimum window size for marching squares
-    windowsize.x() = std::max(2, windowsize.x());
-    windowsize.y() = std::max(2, windowsize.y());
+    windowsize.x() = std::max(1, windowsize.x());
+    windowsize.y() = std::max(1, windowsize.y());
 
     std::string exclude_entries{"thumbnail"};
     ArchiveData arch = extract_sla_archive(zipfname, exclude_entries);
@@ -442,8 +442,8 @@ void fill_slicerconf(ConfMap &m, const SLAPrint &print)
 
 std::unique_ptr<sla::RasterBase> SL1Archive::create_raster() const
 {
-    sla::RasterBase::Resolution res;
-    sla::RasterBase::PixelDim   pxdim;
+    sla::Resolution res;
+    sla::PixelDim   pxdim;
     std::array<bool, 2>         mirror;
 
     double w  = m_cfg.display_width.getFloat();
@@ -464,8 +464,8 @@ std::unique_ptr<sla::RasterBase> SL1Archive::create_raster() const
         std::swap(pw, ph);
     }
 
-    res   = sla::RasterBase::Resolution{pw, ph};
-    pxdim = sla::RasterBase::PixelDim{w / pw, h / ph};
+    res   = sla::Resolution{pw, ph};
+    pxdim = sla::PixelDim{w / pw, h / ph};
     sla::RasterBase::Trafo tr{orientation, mirror};
 
     double gamma = m_cfg.gamma_correction.getFloat();

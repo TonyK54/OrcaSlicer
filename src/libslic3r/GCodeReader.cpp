@@ -1,6 +1,7 @@
 #include "GCodeReader.hpp"
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/log/trivial.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/nowide/cstdio.hpp>
 #include <fstream>
@@ -221,6 +222,28 @@ bool GCodeReader::parse_file_raw(const std::string &filename, raw_line_callback_
         [](size_t){});
 }
 
+const char* GCodeReader::axis_pos(const char *raw_str, char axis)
+{
+    const char *c = raw_str;
+    // Skip the whitespaces.
+    c = skip_whitespaces(c);
+    // Skip the command.
+    c = skip_word(c);
+    // Up to the end of line or comment.
+    while (! is_end_of_gcode_line(*c)) {
+        // Skip whitespaces.
+        c = skip_whitespaces(c);
+        if (is_end_of_gcode_line(*c))
+            break;
+        // Check the name of the axis.
+        if (*c == axis)
+            return c;
+        // Skip the rest of the word.
+        c = skip_word(c);
+    }
+    return nullptr;
+}
+
 bool GCodeReader::GCodeLine::has(char axis) const
 {
     const char *c = m_raw.c_str();
@@ -239,6 +262,29 @@ bool GCodeReader::GCodeLine::has(char axis) const
             return true;
         // Skip the rest of the word.
         c = skip_word(c);
+    }
+    return false;
+}
+
+std::string_view GCodeReader::GCodeLine::axis_pos(char axis) const
+{
+    const std::string &s = this->raw();
+    const char *c = GCodeReader::axis_pos(this->raw().c_str(), axis);
+    return c ? std::string_view{ c, s.size() - (c - s.data()) } : std::string_view();
+}
+
+bool GCodeReader::GCodeLine::has_value(std::string_view axis_pos, float &value)
+{
+    if (const char *c = axis_pos.data(); c) {
+        // Try to parse the numeric value.
+        double v = 0.;
+        const char *end = axis_pos.data() + axis_pos.size();
+        auto [pend, ec] = fast_float::from_chars(++ c, end, v);
+        if (pend != c && is_end_of_word(*pend)) {
+            // The axis value has been parsed correctly.
+            value = float(v);
+            return true;
+        }
     }
     return false;
 }
@@ -274,7 +320,7 @@ bool GCodeReader::GCodeLine::has_value(char axis, float &value) const
     return false;
 }
 
-void GCodeReader::GCodeLine::set(const GCodeReader &reader, const Axis axis, const float new_value, const int decimal_digits)
+void GCodeReader::GCodeLine::set(const Axis axis, const float new_value, const int decimal_digits)
 {
     std::ostringstream ss;
     ss << std::fixed << std::setprecision(decimal_digits) << new_value;

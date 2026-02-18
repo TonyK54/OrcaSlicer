@@ -57,6 +57,7 @@ public:
 
     // IDs of the Vertex Array Objects, into which the geometry has been loaded.
     // Zero if the VBOs are not sent to GPU yet.
+    unsigned int              vertices_VAO_id{ 0 };
     unsigned int              vertices_VBO_id{0};
     std::vector<unsigned int> triangle_indices_VBO_ids;
 };
@@ -67,11 +68,9 @@ public:
     GLGizmoMmuSegmentation(GLCanvas3D& parent, const std::string& icon_filename, unsigned int sprite_id);
     ~GLGizmoMmuSegmentation() override = default;
 
-    void render_painter_gizmo() const override;
+    void render_painter_gizmo() override;
 
-    void set_painter_gizmo_data(const Selection& selection) override;
-
-    void render_triangles(const Selection& selection) const override;
+    void data_changed(bool is_serializing) override;
 
     // TriangleSelector::serialization/deserialization has a limit to store 19 different states.
     // EXTRUDER_LIMIT + 1 states are used to storing the painting because also uncolored triangles are stored.
@@ -87,7 +86,7 @@ public:
 
 protected:
     // BBS
-    std::array<float, 4> get_cursor_hover_color() const override;
+    ColorRGBA get_cursor_hover_color() const override;
     void on_set_state() override;
 
     EnforcerBlockerType get_left_button_state_type() const override { return EnforcerBlockerType(m_selected_extruder_idx + 1); }
@@ -103,16 +102,22 @@ protected:
 
     std::string get_gizmo_entering_text() const override { return "Entering color painting"; }
     std::string get_gizmo_leaving_text() const override { return "Leaving color painting"; }
-    std::string get_action_snapshot_name() override { return "Color painting editing"; }
+    std::string get_action_snapshot_name() const override { return "Color painting editing"; }
 
     // BBS
     size_t                            m_selected_extruder_idx = 0;
-    std::vector<std::array<float, 4>> m_extruders_colors;
+    std::vector<ColorRGBA>            m_extruders_colors;
     std::vector<int>                  m_volumes_extruder_idxs;
 
     // BBS
     wchar_t                           m_current_tool = 0;
     bool                              m_detect_geometry_edge = true;
+    
+    // Filament remap feature
+    bool                              m_show_remap_panel = false;
+    std::vector<size_t>               m_extruder_remap;      // index → target extruder index
+    // ORCA: Cache used filaments to filter UI
+    std::set<size_t>                  m_used_filaments;      // Set of used filament indices (cached)
 
     static const constexpr float      CursorRadiusMin = 0.1f; // cannot be zero
 
@@ -134,6 +139,12 @@ private:
     // BBS
     void update_triangle_selectors_colors();
     void init_extruders_data();
+    
+    // Filament remapping methods
+    void remap_filament_assignments();
+    void render_filament_remap_ui(float window_width, float max_tooltip_width);
+    // ORCA: Helper to update the cache of used filaments
+    void update_used_filaments();
 
     // This map holds all translated description texts, so they can be easily referenced during layout calculations
     // etc. When language changes, GUI is recreated and this class constructed again, so the change takes effect.

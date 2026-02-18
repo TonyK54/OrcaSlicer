@@ -1,10 +1,10 @@
 {
     "type": "filament",
-    "filament_id": "GFC00",
     "name": "Bambu PC @base",
-    "from": "system",
-    "instantiation": "false",
     "inherits": "fdm_filament_pc",
+    "from": "system",
+    "filament_id": "GFC00",
+    "instantiation": "false",
     "filament_vendor": [
         "Bambu Lab"
     ],
@@ -13,5 +13,8 @@
     ],
     "filament_flow_ratio": [
         "0.94"
+    ],
+    "impact_strength_z": [
+        "9.0"
     ]
 }

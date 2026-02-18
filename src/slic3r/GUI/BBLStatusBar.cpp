@@ -5,6 +5,7 @@
 #include <wx/button.h>
 #include <wx/statusbr.h>
 #include <wx/frame.h>
+#include <wx/statline.h>
 
 #include "GUI_App.hpp"
 
@@ -124,6 +125,11 @@ void BBLStatusBar::set_range(int val)
 }
 
 void BBLStatusBar::clear_percent()
+{
+
+}
+
+void BBLStatusBar::show_error_info(wxString msg, int code, wxString description, wxString extra)
 {
 
 }

@@ -1,6 +1,9 @@
 #include "Tab.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Model.hpp"
+#include "libslic3r/AppConfig.hpp"
+#include "slic3r/Utils/bambu_networking.hpp"
+#include "slic3r/Utils/NetworkAgent.hpp"
 
 #include <wx/app.h>
 #include <wx/button.h>
@@ -28,6 +31,8 @@
 #include "MediaFilePanel.h"
 #include "Plater.hpp"
 #include "BindDialog.hpp"
+
+#include "DeviceCore/DevManager.h"
 
 namespace Slic3r {
 namespace GUI {
@@ -94,9 +99,9 @@ AddMachinePanel::~AddMachinePanel() {
     m_button_add_machine->Disconnect(wxEVT_COMMAND_BUTTON_CLICKED, wxCommandEventHandler(AddMachinePanel::on_add_machine), NULL, this);
 }
 
- MonitorPanel::MonitorPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style)
+MonitorPanel::MonitorPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style)
     : wxPanel(parent, id, pos, size, style),
-     m_select_machine(SelectMachinePopup(this))
+    m_select_machine(SelectMachinePopup(this))
 {
 #ifdef __WINDOWS__
     SetDoubleBuffered(true);
@@ -112,7 +117,7 @@ AddMachinePanel::~AddMachinePanel() {
 
     init_timer();
 
-    m_side_tools->Connect(wxEVT_LEFT_DOWN, wxMouseEventHandler(MonitorPanel::on_printer_clicked), NULL, this);
+    m_side_tools->get_panel()->Connect(wxEVT_LEFT_DOWN, wxMouseEventHandler(MonitorPanel::on_printer_clicked), NULL, this);
 
     Bind(wxEVT_TIMER, &MonitorPanel::on_timer, this);
     Bind(wxEVT_SIZE, &MonitorPanel::on_size, this);
@@ -120,19 +125,30 @@ AddMachinePanel::~AddMachinePanel() {
 
     m_select_machine.Bind(EVT_FINISHED_UPDATE_MACHINE_LIST, [this](wxCommandEvent& e) {
         m_side_tools->start_interval();
-    });
+        });
+
+    Bind(EVT_ALREADY_READ_HMS, [this](wxCommandEvent& e) {
+        auto key = e.GetString().ToStdString();
+        auto iter = m_hms_panel->temp_hms_list.find(key);
+        if (iter != m_hms_panel->temp_hms_list.end()) {
+            m_hms_panel->temp_hms_list[key].set_read();
+        }
+
+        update_hms_tag();
+        e.Skip();
+        });
 }
 
 MonitorPanel::~MonitorPanel()
 {
-    m_side_tools->Disconnect(wxEVT_LEFT_DOWN, wxMouseEventHandler(MonitorPanel::on_printer_clicked), NULL, this);
+    m_side_tools->get_panel()->Disconnect(wxEVT_LEFT_DOWN, wxMouseEventHandler(MonitorPanel::on_printer_clicked), NULL, this);
 
     if (m_refresh_timer)
         m_refresh_timer->Stop();
     delete m_refresh_timer;
 }
 
- void MonitorPanel::init_bitmap()
+void MonitorPanel::init_bitmap()
 {
     m_signal_strong_img = create_scaled_bitmap("monitor_signal_strong", nullptr, 24);
     m_signal_middle_img = create_scaled_bitmap("monitor_signal_middle", nullptr, 24);
@@ -142,76 +158,50 @@ MonitorPanel::~MonitorPanel()
     m_arrow_img = create_scaled_bitmap("monitor_arrow",nullptr, 14);
 }
 
- void MonitorPanel::init_timer()
+void MonitorPanel::init_timer()
 {
     m_refresh_timer = new wxTimer();
     m_refresh_timer->SetOwner(this);
     m_refresh_timer->Start(REFRESH_INTERVAL);
-    wxPostEvent(this, wxTimerEvent());
-
-    Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (!dev) return;
-    MachineObject *obj_ = dev->get_selected_machine();
-    if (obj_)
-        GUI::wxGetApp().sidebar().load_ams_list(obj_->dev_id, obj_->amsList);
+    if (update_flag) { update_all();}
 }
 
- void MonitorPanel::init_tabpanel()
+void MonitorPanel::init_tabpanel()
 {
     m_side_tools = new SideTools(this, wxID_ANY);
     wxBoxSizer* sizer_side_tools = new wxBoxSizer(wxVERTICAL);
-
-   /* auto warning_panel = new wxPanel(this, wxID_ANY);
-    warning_panel->SetBackgroundColour(wxColour(255, 111, 0));
-    warning_panel->SetSize(wxSize(FromDIP(220), FromDIP(25)));
-    warning_panel->SetMinSize(wxSize(FromDIP(220), FromDIP(25)));
-    warning_panel->SetMaxSize(wxSize(FromDIP(220), FromDIP(25)));
-    sizer_side_tools->Add(warning_panel, 0, wxEXPAND, 0);
-
-    wxBoxSizer *sizer_boxh = new wxBoxSizer(wxVERTICAL);
-    wxBoxSizer *sizer_boxv = new wxBoxSizer(wxHORIZONTAL);*/
-
-    m_connection_info = new Button(this, "Failed to connect to the printer");
-    m_connection_info->SetBackgroundColor(wxColour(255, 111, 0));
-    m_connection_info->SetBorderColor(wxColour(255, 111, 0));
-    m_connection_info->SetTextColor(*wxWHITE);
-    m_connection_info->SetFont(::Label::Body_13);
-    m_connection_info->SetCornerRadius(0);
-    m_connection_info->SetSize(wxSize(FromDIP(-1), FromDIP(25)));
-    m_connection_info->SetMinSize(wxSize(FromDIP(-1), FromDIP(25)));
-    m_connection_info->SetMaxSize(wxSize(FromDIP(-1), FromDIP(25)));
-
-    wxBoxSizer* connection_sizer = new wxBoxSizer(wxVERTICAL);
-    m_hyperlink = new wxHyperlinkCtrl(m_connection_info, wxID_ANY, _L("Failed to connect to the server"), wxT("https://wiki.bambulab.com/en/software/bambu-studio/failed-to-connect-printer"), wxDefaultPosition, wxDefaultSize, wxHL_DEFAULT_STYLE);
-    connection_sizer->Add(m_hyperlink, 0, wxALIGN_CENTER | wxALL, 5);
-    m_hyperlink->SetBackgroundColour(wxColour(255, 111, 0));
-    m_connection_info->SetSizer(connection_sizer);
-    m_connection_info->Layout();
-    connection_sizer->Fit(m_connection_info);
-
-    m_connection_info->Hide();
-
-
-    sizer_side_tools->Add(m_connection_info, 0, wxEXPAND, 0);
     sizer_side_tools->Add(m_side_tools, 1, wxEXPAND, 0);
     m_tabpanel             = new Tabbook(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, sizer_side_tools, wxNB_LEFT | wxTAB_TRAVERSAL | wxNB_NOPAGETHEME);
+    m_side_tools->set_table_panel(m_tabpanel);
     m_tabpanel->SetBackgroundColour(wxColour("#FEFFFF"));
     m_tabpanel->Bind(wxEVT_BOOKCTRL_PAGE_CHANGED, [this](wxBookCtrlEvent& e) {
-        ;
-    });
+        auto page = m_tabpanel->GetCurrentPage();
+        if (page == m_media_file_panel) {
+            auto title = m_tabpanel->GetPageText(m_tabpanel->GetSelection());
+            m_media_file_panel->SwitchStorage(title == _L("Storage"));
+        }
+        page->SetFocus();
+        update_all();
+        }, m_tabpanel->GetId());
 
     //m_status_add_machine_panel = new AddMachinePanel(m_tabpanel);
     m_status_info_panel        = new StatusPanel(m_tabpanel);
     m_tabpanel->AddPage(m_status_info_panel, _L("Status"), "", true);
 
     m_media_file_panel = new MediaFilePanel(m_tabpanel);
-    m_tabpanel->AddPage(m_media_file_panel, _L("Media"), "", false);
+    m_tabpanel->AddPage(m_media_file_panel, _L("Storage"), "", false);
+    //m_tabpanel->AddPage(m_media_file_panel, _L("Internal Storage"), "", false);
 
     m_upgrade_panel = new UpgradePanel(m_tabpanel);
-    m_tabpanel->AddPage(m_upgrade_panel, _L("Update"), "", false);
+    m_tabpanel->AddPage(m_upgrade_panel, _CTX(L_CONTEXT("Update", "Firmware"), "Firmware"), "", false);
 
     m_hms_panel = new HMSPanel(m_tabpanel);
-    m_tabpanel->AddPage(m_hms_panel, _L("HMS"),"", false);
+    m_tabpanel->AddPage(m_hms_panel, _L("Assistant(HMS)"),    "", false);
+
+    std::string network_ver = Slic3r::NetworkAgent::get_version();
+    if (!network_ver.empty()) {
+        m_tabpanel->SetFooterText(wxString::Format("Network plugin v%s", network_ver));
+    }
 
     m_initialized = true;
     show_status((int)MonitorStatus::MONITOR_NO_PRINTER);
@@ -227,8 +217,6 @@ void MonitorPanel::set_default()
 
     /* reset side tool*/
     //m_bitmap_wifi_signal->SetBitmap(wxNullBitmap);
-
-    wxGetApp().sidebar().load_ams_list({}, {});
 }
 
 wxWindow* MonitorPanel::create_side_tools()
@@ -249,6 +237,7 @@ void MonitorPanel::on_sys_color_changed()
 {
     m_status_info_panel->on_sys_color_changed();
     m_upgrade_panel->on_sys_color_changed();
+    m_media_file_panel->Rescale();
 }
 
 void MonitorPanel::msw_rescale()
@@ -257,18 +246,12 @@ void MonitorPanel::msw_rescale()
 
     /* side_tool rescale */
     m_side_tools->msw_rescale();
-
     m_tabpanel->Rescale();
     //m_status_add_machine_panel->msw_rescale();
     m_status_info_panel->msw_rescale();
     m_media_file_panel->Rescale();
     m_upgrade_panel->msw_rescale();
     m_hms_panel->msw_rescale();
-
-    m_connection_info->SetCornerRadius(0);
-    m_connection_info->SetSize(wxSize(FromDIP(220), FromDIP(25)));
-    m_connection_info->SetMinSize(wxSize(FromDIP(220), FromDIP(25)));
-    m_connection_info->SetMaxSize(wxSize(FromDIP(220), FromDIP(25)));
 
     Layout();
     Refresh();
@@ -281,25 +264,23 @@ void MonitorPanel::select_machine(std::string machine_sn)
     wxQueueEvent(this, event);
 }
 
-void MonitorPanel::on_update_all(wxMouseEvent &event)
+
+void MonitorPanel::on_timer(wxTimerEvent& event)
 {
-    update_all();
-    Layout();
-    Refresh();
+    if (update_flag) {
+        update_all();
+        //Layout();
+    }
 }
 
- void MonitorPanel::on_timer(wxTimerEvent& event)
-{
-    update_all();
-
-    Layout();
-    Refresh();
-}
-
- void MonitorPanel::on_select_printer(wxCommandEvent& event)
+void MonitorPanel::on_select_printer(wxCommandEvent& event)
 {
     Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (!dev) return;
+
+    if ( dev->get_selected_machine() && (dev->get_selected_machine()->get_dev_id() != event.GetString().ToStdString()) && m_hms_panel) {
+        m_hms_panel->clear_hms_tag();
+    }
 
     if (!dev->set_selected_machine(event.GetString().ToStdString()))
         return;
@@ -308,11 +289,16 @@ void MonitorPanel::on_update_all(wxMouseEvent &event)
     update_all();
 
     MachineObject *obj_ = dev->get_selected_machine();
-    if (obj_)
-        GUI::wxGetApp().sidebar().load_ams_list(obj_->dev_id, obj_->amsList);
+    if (obj_) {
+        obj_->last_cali_version = -1;
+        obj_->reset_pa_cali_history_result();
+        obj_->reset_pa_cali_result();
+        Sidebar &sidebar = GUI::wxGetApp().sidebar();
+        sidebar.update_sync_status(obj_);
+        sidebar.set_need_auto_sync_after_connect_printer(sidebar.need_auto_sync_extruder_list_after_connect_priner(obj_));
+    }
 
     Layout();
-    Refresh();
 }
 
 void MonitorPanel::on_printer_clicked(wxMouseEvent &event)
@@ -339,93 +325,34 @@ void MonitorPanel::on_printer_clicked(wxMouseEvent &event)
 void MonitorPanel::on_size(wxSizeEvent &event)
 {
     Layout();
-    Refresh();
-}
-
- void MonitorPanel::update_status(MachineObject* obj)
-{
-    if (!obj) return;
-
-    /* Update Device Info */
-    m_side_tools->set_current_printer_name(obj->dev_name);
-
-    // update wifi signal image
-    int wifi_signal_val = 0;
-    if (!obj->is_connected() || obj->is_connecting()) {
-        m_side_tools->set_current_printer_signal(WifiSignal::NONE);
-    } else {
-        if (!obj->wifi_signal.empty() && boost::ends_with(obj->wifi_signal, "dBm")) {
-            try {
-                wifi_signal_val = std::stoi(obj->wifi_signal.substr(0, obj->wifi_signal.size() - 3));
-            }
-            catch (...) {
-                ;
-            }
-            if (wifi_signal_val > -45) {
-                m_side_tools->set_current_printer_signal(WifiSignal::STRONG);
-            }
-            else if (wifi_signal_val <= -45 && wifi_signal_val >= -60) {
-                m_side_tools->set_current_printer_signal(WifiSignal::MIDDLE);
-            }
-            else {
-                m_side_tools->set_current_printer_signal(WifiSignal::WEAK);
-            }
-        }
-        else {
-            m_side_tools->set_current_printer_signal(WifiSignal::MIDDLE);
-        }
-    }
+    //event.Skip();
+    //Refresh();
 }
 
 void MonitorPanel::update_all()
 {
+    if (!m_initialized)
+        return;
+
     NetworkAgent* m_agent = wxGetApp().getAgent();
     Slic3r::DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (!dev)
-        return;
+    if (!dev) return;
     obj = dev->get_selected_machine();
 
-    // check valid machine
-    if (obj && dev->get_my_machine(obj->dev_id) == nullptr) {
-        dev->set_selected_machine("");
-        if (m_agent)
-            m_agent->set_user_selected_machine("");
-        show_status((int)MONITOR_NO_PRINTER);
-        return;
-    }
-
-    //BBS check mqtt connections if user is login
-    if (wxGetApp().is_user_login()) {
-        dev->check_pushing();
-        // check mqtt connection and reconnect if disconnected
-        try {
-            m_agent->refresh_connection();
-        }
-        catch (...) {
-            ;
-        }
-    }
-
-    if (obj) {
-        wxGetApp().reset_to_active();
-        if (obj->connection_type() != last_conn_type) {
-            last_conn_type = obj->connection_type();
-        }
-    }
-
-    m_status_info_panel->obj = obj;
-    m_upgrade_panel->update(obj);
-
-    
-    m_status_info_panel->m_media_play_ctrl->SetMachineObject(obj);
-    m_media_file_panel->SetMachineObject(obj);
-
-    update_status(obj);
-    
     if (!obj) {
         show_status((int)MONITOR_NO_PRINTER);
+        m_hms_panel->clear_hms_tag();
+        m_tabpanel->GetBtnsListCtrl()->showNewTag(3, false);
+        if (m_status_info_panel->IsShown()) {
+            m_status_info_panel->m_media_play_ctrl->SetMachineObject(obj);
+            m_status_info_panel->update(obj);
+        }
         return;
     }
+
+    if (obj->connection_type() != last_conn_type) { last_conn_type = obj->connection_type(); }
+
+    m_side_tools->update_status(obj);
 
     if (obj->is_connecting()) {
         show_status(MONITOR_CONNECTING);
@@ -444,19 +371,43 @@ void MonitorPanel::update_all()
 
     show_status(MONITOR_NORMAL);
 
-
-    if (m_status_info_panel->IsShown()) {
-        m_status_info_panel->update(obj);
+    auto current_page = m_tabpanel->GetCurrentPage();
+    if (current_page == m_status_info_panel) {
+        if (m_status_info_panel->IsShown()) {
+            m_status_info_panel->obj = obj;
+            m_status_info_panel->m_media_play_ctrl->SetMachineObject(obj);
+            m_status_info_panel->update(obj);
+        }
+    } else if (current_page == m_upgrade_panel) {
+        m_upgrade_panel->update(obj);
+    } else if (current_page == m_media_file_panel) {
+        m_media_file_panel->UpdateByObj(obj);
     }
 
-    if (m_hms_panel->IsShown()) {
+    if (current_page == m_hms_panel || (obj->GetHMS()->GetHMSItems().size() != m_hms_panel->temp_hms_list.size())) {
         m_hms_panel->update(obj);
     }
-#if !BBL_RELEASE_TO_PUBLIC
-    if (m_upgrade_panel->IsShown()) {
-        m_upgrade_panel->update(obj);
+
+    update_hms_tag();
+}
+
+void MonitorPanel::update_hms_tag()
+{
+    for (auto hmsitem : m_hms_panel->temp_hms_list) {
+
+        if (!obj) { break;}
+
+        const wxString &msg = wxGetApp().get_hms_query()->query_hms_msg(obj->get_dev_id(), hmsitem.second.get_long_error_code());
+        if (msg.empty()){ continue;} /*STUDIO-10363 it's hidden message*/
+
+        if (!hmsitem.second.has_read()) {
+            //show HMS new tag
+            m_tabpanel->GetBtnsListCtrl()->showNewTag(3, true);
+            return;
+        }
     }
-#endif
+
+    m_tabpanel->GetBtnsListCtrl()->showNewTag(3, false);
 }
 
 bool MonitorPanel::Show(bool show)
@@ -468,114 +419,136 @@ bool MonitorPanel::Show(bool show)
     NetworkAgent* m_agent = wxGetApp().getAgent();
     DeviceManager* dev = Slic3r::GUI::wxGetApp().getDeviceManager();
     if (show) {
+        start_update();
+        update_network_version_footer();
+
         m_refresh_timer->Stop();
         m_refresh_timer->SetOwner(this);
         m_refresh_timer->Start(REFRESH_INTERVAL);
-        wxPostEvent(this, wxTimerEvent());
+        if (update_flag) { update_all(); }
 
         if (dev) {
             //set a default machine when obj is null
             obj = dev->get_selected_machine();
             if (obj == nullptr) {
                 dev->load_last_machine();
-                obj = dev->get_selected_machine();
-                if (obj) 
-                    GUI::wxGetApp().sidebar().load_ams_list(obj->dev_id, obj->amsList);
             } else {
                 obj->reset_update_time();
             }
         }
     } else {
+        stop_update();
         m_refresh_timer->Stop();
     }
     return wxPanel::Show(show);
 }
 
-void MonitorPanel::update_side_panel()
-{
-    Slic3r::DeviceManager *dev = Slic3r::GUI::wxGetApp().getDeviceManager();
-    if (!dev) return;
-
-    auto is_next_machine = false;
-    if (!dev->get_first_online_user_machine().empty()) {
-        wxCommandEvent* event = new wxCommandEvent(wxEVT_COMMAND_CHOICE_SELECTED);
-        event->SetString(dev->get_first_online_user_machine());
-        wxQueueEvent(this, event);
-        is_next_machine = true;
-        return;
-    }
-
-    if (!is_next_machine) { m_side_tools->set_none_printer_mode(); }
-}
-
 void MonitorPanel::show_status(int status)
 {
     if (!m_initialized) return;
-
-    if (last_status == status)
-        return;
+    if (last_status == status)return;
+    if ((last_status & (int)MonitorStatus::MONITOR_CONNECTING) != 0) {
+        NetworkAgent* agent = wxGetApp().getAgent();
+        json j;
+        j["dev_id"] = obj ? obj->get_dev_id() : "obj_nullptr";
+        if ((status & (int)MonitorStatus::MONITOR_DISCONNECTED) != 0) {
+            j["result"] = "failed";
+        }
+        else if ((status & (int)MonitorStatus::MONITOR_NORMAL) != 0) {
+            j["result"] = "success";
+        }
+    }
     last_status = status;
 
     BOOST_LOG_TRIVIAL(info) << "monitor: show_status = " << status;
 
-    if (((status & (int) MonitorStatus::MONITOR_DISCONNECTED) != 0) || ((status & (int) MonitorStatus::MONITOR_DISCONNECTED_SERVER) != 0)) {
-        if ((status & (int) MonitorStatus::MONITOR_DISCONNECTED_SERVER))
-            m_hyperlink->SetLabel(_L("Failed to connect to the server"));
-            //m_connection_info->SetLabel(_L("Failed to connect to the server"));
-        else
-            m_hyperlink->SetLabel(_L("Failed to connect to the printer"));
-            //m_connection_info->SetLabel(_L("Failed to connect to the printer"));
-
-        m_hyperlink->Show();
-        m_connection_info->SetLabel(wxEmptyString);
-        m_connection_info->Show();
-        m_connection_info->SetBackgroundColor(wxColour(255, 111, 0));
-        m_connection_info->SetBorderColor(wxColour(255, 111, 0));
-#if !BBL_RELEASE_TO_PUBLIC
-        m_upgrade_panel->update(nullptr);
-#endif
-    } else if ((status & (int) MonitorStatus::MONITOR_NORMAL) != 0) {
-        m_connection_info->Hide();
-    } else if ((status & (int) MonitorStatus::MONITOR_CONNECTING) != 0) {
-        m_hyperlink->Hide();
-        m_connection_info->SetLabel(_L("Connecting..."));
-        m_connection_info->SetBackgroundColor(wxColour(0, 150, 136));
-        m_connection_info->SetBorderColor(wxColour(0, 150, 136));
-        m_connection_info->Show();
-    }
-
-    Freeze();
-
+    //Freeze();
     // update panels
+    if (m_side_tools) { m_side_tools->show_status(status); };
     m_status_info_panel->show_status(status);
     m_hms_panel->show_status(status);
     m_upgrade_panel->show_status(status);
 
     if ((status & (int)MonitorStatus::MONITOR_NO_PRINTER) != 0) {
         set_default();
-        m_side_tools->set_none_printer_mode();
-        m_connection_info->Hide();
-        m_tabpanel->Refresh();
         m_tabpanel->Layout();
-#if !BBL_RELEASE_TO_PUBLIC
-        m_upgrade_panel->update(nullptr);
-#endif
     } else if (((status & (int)MonitorStatus::MONITOR_NORMAL) != 0)
         || ((status & (int)MonitorStatus::MONITOR_DISCONNECTED) != 0)
         || ((status & (int) MonitorStatus::MONITOR_DISCONNECTED_SERVER) != 0)
-        || ((status & (int)MonitorStatus::MONITOR_CONNECTING) != 0)
-        ) {
+        || ((status & (int)MonitorStatus::MONITOR_CONNECTING) != 0) )
+    {
+
         if (((status & (int) MonitorStatus::MONITOR_DISCONNECTED) != 0)
             || ((status & (int) MonitorStatus::MONITOR_DISCONNECTED_SERVER) != 0)
-            || ((status & (int)MonitorStatus::MONITOR_CONNECTING) != 0)) {
-            m_side_tools->set_current_printer_signal(WifiSignal::NONE);
+            || ((status & (int)MonitorStatus::MONITOR_CONNECTING) != 0))
+        {
             set_default();
         }
-        m_tabpanel->Refresh();
         m_tabpanel->Layout();
     }
     Layout();
-    Thaw();
+    //Thaw();
+}
+
+std::string MonitorPanel::get_string_from_tab(PrinterTab tab)
+{
+    switch (tab) {
+    case PT_STATUS :
+        return "status";
+    case PT_MEDIA:
+        return "sd_card";
+    case PT_UPDATE:
+        return "update";
+    case PT_HMS:
+        return "HMS";
+    case PT_DEBUG:
+        return "debug";
+    default:
+        return "";
+    }
+    return "";
+}
+
+void MonitorPanel::jump_to_HMS()
+{
+    if (!this->IsShown())
+        return;
+    auto page = m_tabpanel->GetCurrentPage();
+    if (page && page != m_hms_panel)
+        m_tabpanel->SetSelection(PT_HMS);
+}
+
+void MonitorPanel::jump_to_LiveView()
+{
+    if (!this->IsShown()) { return; }
+
+    auto page = m_tabpanel->GetCurrentPage();
+    if (page && page != m_hms_panel)
+    {
+        m_tabpanel->SetSelection(PT_STATUS);
+    }
+
+    m_status_info_panel->get_media_play_ctrl()->jump_to_play();
+}
+
+void MonitorPanel::update_network_version_footer()
+{
+    std::string binary_version = Slic3r::NetworkAgent::get_version();
+    if (binary_version.empty())
+        return;
+
+    std::string configured_version = wxGetApp().app_config->get_network_plugin_version();
+    std::string suffix = extract_suffix(configured_version);
+    std::string configured_base = extract_base_version(configured_version);
+
+    wxString footer_text;
+    if (!suffix.empty() && configured_base == binary_version) {
+        footer_text = wxString::Format("Network plugin v%s (%s)", binary_version, suffix);
+    } else {
+        footer_text = wxString::Format("Network plugin v%s", binary_version);
+    }
+
+    m_tabpanel->SetFooterText(footer_text);
 }
 
 } // GUI
